@@ -1,4 +1,5 @@
 // backend/src/server.js
+// backend/src/server.js
 const express = require('express')
 const cors = require('cors')
 const helmet = require('helmet')
@@ -9,10 +10,35 @@ require('dotenv').config()
 const app = express()
 const httpServer = createServer(app)
 
+// ─── CORS (MUST BE FIRST) ────────────────────────────────────────────────────
+const allowedOrigins = [
+  process.env.CORS_ORIGIN,
+  process.env.FRONTEND_URL,
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://steverest-hims-dbye-m8y2geg5k-steverest.vercel.app',
+  'https://steverest-hims.vercel.app',
+].filter(Boolean)
+
+app.use(cors({
+  origin: function(origin, callback) {
+    callback(null, true) // allow all origins for now
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}))
+
+app.options('*', cors()) // handle preflight
+
+app.use(helmet({ crossOriginResourcePolicy: false }))
+app.use(express.json({ limit: '10mb' }))
+app.use(express.urlencoded({ extended: true }))
+
 // ─── Socket.IO ───────────────────────────────────────────────────────────────
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: '*',
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     credentials: true
   }
@@ -26,17 +52,6 @@ io.on('connection', (socket) => {
   socket.on('disconnect', ()       => { console.log('❌ Disconnected: ' + socket.id) })
 })
 app.set('io', io)
-
-// ─── Middleware ───────────────────────────────────────────────────────────────
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }))
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}))
-app.use(express.json({ limit: '10mb' }))
-app.use(express.urlencoded({ extended: true }))
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
@@ -107,14 +122,13 @@ routeLoader('/api/reports',       './routes/reports.routes')
 routeLoader('/api/facility',      './routes/facility.routes')
 routeLoader('/api/coordinator',   './routes/coordinator.routes')
 
-// ─── Notifications (inline) ───────────────────────────────────────────────────
+// ─── Notifications ────────────────────────────────────────────────────────────
 if (prisma) {
   app.get('/api/notifications', authMiddleware, async (req, res) => {
     try {
       const page  = parseInt(req.query.page)  || 1
       const limit = parseInt(req.query.limit) || 20
       const skip  = (page - 1) * limit
-
       const [notifications, unreadCount] = await Promise.all([
         prisma.notification.findMany({
           where:   { userId: req.user?.id },
@@ -125,10 +139,7 @@ if (prisma) {
           where: { userId: req.user?.id, isRead: false }
         })
       ])
-      res.json({
-        success: true,
-        data: { notifications, unreadCount, page, limit }
-      })
+      res.json({ success: true, data: { notifications, unreadCount, page, limit } })
     } catch (error) {
       res.status(500).json({ success: false, message: error.message })
     }
@@ -190,7 +201,6 @@ const startServer = async () => {
       console.log('⚠️  Server will start but DB features unavailable')
     }
   }
-
   httpServer.listen(PORT, () => {
     console.log('\n==============================================')
     console.log('  🏥 St. Everest Mediplex HIMS Backend')
@@ -201,33 +211,6 @@ const startServer = async () => {
   })
 }
 
-// --- CORS ---
-const allowedOrigins = [
-  process.env.CORS_ORIGIN,
-  process.env.FRONTEND_URL,
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'https://steverest-hims-dbye-m8y2geg5k-steverest.vercel.app',
-  'https://steverest-hims.vercel.app',
-].filter(Boolean)
-
-app.use(cors({
-  origin: function(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true)
-    } else {
-      console.log('CORS blocked:', origin)
-      callback(null, true) // allow all for now
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}))
-
-app.use(helmet({ crossOriginResourcePolicy: false }))
-app.use(express.json({ limit: '10mb' }))
-app.use(express.urlencoded({ extended: true }))
 startServer()
 
 module.exports = { app, io, prisma }
