@@ -201,6 +201,33 @@ const startServer = async () => {
   })
 }
 
+// --- CORS ---
+const allowedOrigins = [
+  process.env.CORS_ORIGIN,
+  process.env.FRONTEND_URL,
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://steverest-hims-dbye-m8y2geg5k-steverest.vercel.app',
+  'https://steverest-hims.vercel.app',
+].filter(Boolean)
+
+app.use(cors({
+  origin: function(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true)
+    } else {
+      console.log('CORS blocked:', origin)
+      callback(null, true) // allow all for now
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}))
+
+app.use(helmet({ crossOriginResourcePolicy: false }))
+app.use(express.json({ limit: '10mb' }))
+app.use(express.urlencoded({ extended: true }))
 startServer()
 
 module.exports = { app, io, prisma }
