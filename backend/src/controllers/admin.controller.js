@@ -30,19 +30,21 @@ const getUsers = async (req, res) => {
         skip,
         take: Number(limit),
         select: {
-          id:           true,
-          employeeId:   true,
-          firstName:    true,
-          lastName:     true,
-          email:        true,
-          phone:        true,
-          role:         true,
-          status:       true,
-          department:   true,
+          id:             true,
+          employeeId:     true,
+          firstName:      true,
+          lastName:       true,
+          email:          true,
+          phone:          true,
+          role:           true,
+          status:         true,
           specialization: true,
           qualification:  true,
-          lastLogin:    true,
-          createdAt:    true
+          lastLogin:      true,
+          createdAt:      true,
+          department: {
+            select: { id: true, name: true, code: true }
+          }
         },
         orderBy: { createdAt: 'desc' }
       }),
@@ -72,7 +74,7 @@ const createUser = async (req, res) => {
     const {
       firstName, lastName, email, phone,
       role, password, employeeId,
-      department, specialization, qualification
+      departmentId, specialization, qualification
     } = req.body
 
     // ✅ Validate required fields
@@ -81,14 +83,18 @@ const createUser = async (req, res) => {
     }
 
     // ✅ Check duplicate email
-    const existingEmail = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } })
+    const existingEmail = await prisma.user.findUnique({
+      where: { email: email.toLowerCase().trim() }
+    })
     if (existingEmail) {
       return sendError(res, 'Email already registered', 409)
     }
 
     // ✅ Check duplicate employeeId if provided
     if (employeeId) {
-      const existingEmp = await prisma.user.findFirst({ where: { employeeId } })
+      const existingEmp = await prisma.user.findFirst({
+        where: { employeeId }
+      })
       if (existingEmp) {
         return sendError(res, 'Employee ID already exists', 409)
       }
@@ -96,7 +102,10 @@ const createUser = async (req, res) => {
 
     // ✅ Use provided password or default
     const plainPassword = password || 'TempPass@1234'
-    const passwordHash  = await bcrypt.hash(plainPassword, parseInt(process.env.BCRYPT_ROUNDS) || 10)
+    const passwordHash  = await bcrypt.hash(
+      plainPassword,
+      parseInt(process.env.BCRYPT_ROUNDS) || 10
+    )
 
     // ✅ Auto-generate employee ID if not provided
     const count = await prisma.user.count()
@@ -111,9 +120,9 @@ const createUser = async (req, res) => {
         role,
         passwordHash,
         employeeId:     empId,
-        department:     department      || null,
-        specialization: specialization  || null,
-        qualification:  qualification   || null,
+        departmentId:   departmentId   || null,
+        specialization: specialization || null,
+        qualification:  qualification  || null,
         status:         'ACTIVE'
       },
       select: {
@@ -125,9 +134,12 @@ const createUser = async (req, res) => {
         phone:          true,
         role:           true,
         status:         true,
-        department:     true,
         specialization: true,
-        createdAt:      true
+        qualification:  true,
+        createdAt:      true,
+        department: {
+          select: { id: true, name: true, code: true }
+        }
       }
     })
 
@@ -159,11 +171,11 @@ const createUser = async (req, res) => {
 
 const updateUser = async (req, res) => {
   try {
-    const prisma  = getPrisma()
-    const { id }  = req.params
+    const prisma = getPrisma()
+    const { id } = req.params
     const {
       firstName, lastName, phone, role,
-      department, specialization, qualification, status
+      departmentId, specialization, qualification, status
     } = req.body
 
     // ✅ Check user exists
@@ -173,14 +185,14 @@ const updateUser = async (req, res) => {
     const user = await prisma.user.update({
       where: { id },
       data: {
-        ...(firstName      && { firstName }),
-        ...(lastName       && { lastName }),
-        ...(phone          && { phone }),
-        ...(role           && { role }),
-        ...(status         && { status }),
-        department:     department      || null,
-        specialization: specialization  || null,
-        qualification:  qualification   || null
+        ...(firstName && { firstName }),
+        ...(lastName  && { lastName  }),
+        ...(phone     && { phone     }),
+        ...(role      && { role      }),
+        ...(status    && { status    }),
+        departmentId:   departmentId   !== undefined ? departmentId   || null : undefined,
+        specialization: specialization !== undefined ? specialization || null : undefined,
+        qualification:  qualification  !== undefined ? qualification  || null : undefined
       },
       select: {
         id:             true,
@@ -191,9 +203,12 @@ const updateUser = async (req, res) => {
         phone:          true,
         role:           true,
         status:         true,
-        department:     true,
         specialization: true,
-        createdAt:      true
+        qualification:  true,
+        createdAt:      true,
+        department: {
+          select: { id: true, name: true, code: true }
+        }
       }
     })
 
@@ -221,15 +236,18 @@ const updateUser = async (req, res) => {
 
 const resetUserPassword = async (req, res) => {
   try {
-    const prisma      = getPrisma()
-    const { id }      = req.params
+    const prisma       = getPrisma()
+    const { id }       = req.params
     const { password } = req.body
 
     const existing = await prisma.user.findUnique({ where: { id } })
     if (!existing) return sendError(res, 'User not found', 404)
 
     const newPassword  = password || 'TempPass@1234'
-    const passwordHash = await bcrypt.hash(newPassword, parseInt(process.env.BCRYPT_ROUNDS) || 10)
+    const passwordHash = await bcrypt.hash(
+      newPassword,
+      parseInt(process.env.BCRYPT_ROUNDS) || 10
+    )
 
     await prisma.user.update({
       where: { id },
@@ -299,7 +317,7 @@ const activateUser = async (req, res) => {
 
 const getDepartments = async (req, res) => {
   try {
-    const prisma = getPrisma()
+    const prisma      = getPrisma()
     const departments = await prisma.department.findMany({
       include: {
         _count: { select: { users: true, wards: true } }
@@ -340,8 +358,8 @@ const createDepartment = async (req, res) => {
 
 const updateDepartment = async (req, res) => {
   try {
-    const prisma      = getPrisma()
-    const { id }      = req.params
+    const prisma = getPrisma()
+    const { id } = req.params
     const { name, description, isActive } = req.body
 
     const dept = await prisma.department.update({
@@ -366,7 +384,9 @@ const getWards = async (req, res) => {
         department: { select: { name: true, code: true } },
         rooms: {
           include: {
-            beds: { select: { id: true, bedNumber: true, status: true } }
+            beds: {
+              select: { id: true, bedNumber: true, status: true }
+            }
           }
         },
         _count: { select: { rooms: true, admissions: true } }
@@ -413,15 +433,17 @@ const createWard = async (req, res) => {
 
 const getRooms = async (req, res) => {
   try {
-    const prisma    = getPrisma()
+    const prisma     = getPrisma()
     const { wardId } = req.query
-    const where     = wardId ? { wardId } : {}
+    const where      = wardId ? { wardId } : {}
 
     const rooms = await prisma.room.findMany({
       where,
       include: {
         ward: { select: { name: true, code: true } },
-        beds: { select: { id: true, bedNumber: true, status: true, bedType: true } },
+        beds: {
+          select: { id: true, bedNumber: true, status: true, bedType: true }
+        },
         _count: { select: { beds: true } }
       },
       orderBy: { roomNumber: 'asc' }
@@ -461,10 +483,10 @@ const createRoom = async (req, res) => {
 
 const getBeds = async (req, res) => {
   try {
-    const prisma          = getPrisma()
+    const prisma             = getPrisma()
     const { wardId, status } = req.query
-    const where           = {}
-    if (wardId) where.room = { wardId }
+    const where              = {}
+    if (wardId) where.room   = { wardId }
     if (status) where.status = status
 
     const beds = await prisma.bed.findMany({
@@ -498,7 +520,7 @@ const createBed = async (req, res) => {
       data: {
         bedNumber,
         roomId,
-        bedType:   bedType   || 'STANDARD',
+        bedType:   bedType  || 'STANDARD',
         dailyRate: Number(dailyRate) || 0,
         status:    'AVAILABLE'
       }
@@ -518,8 +540,8 @@ const createBed = async (req, res) => {
 
 const getSettings = async (req, res) => {
   try {
-    const prisma    = getPrisma()
-    const settings  = await prisma.systemSetting.findMany({
+    const prisma   = getPrisma()
+    const settings = await prisma.systemSetting.findMany({
       orderBy: { group: 'asc' }
     })
 
@@ -538,7 +560,7 @@ const getSettings = async (req, res) => {
 
 const updateSetting = async (req, res) => {
   try {
-    const prisma     = getPrisma()
+    const prisma            = getPrisma()
     const { key, value, group } = req.body
 
     if (!key || value === undefined) {
@@ -561,12 +583,12 @@ const updateSetting = async (req, res) => {
 
 const getAuditLogs = async (req, res) => {
   try {
-    const prisma              = getPrisma()
+    const prisma   = getPrisma()
     const { page = 1, limit = 50, module, action } = req.query
-    const skip                = (Number(page) - 1) * Number(limit)
-    const where               = {}
-    if (module) where.module  = module
-    if (action) where.action  = action
+    const skip     = (Number(page) - 1) * Number(limit)
+    const where    = {}
+    if (module) where.module = module
+    if (action) where.action = action
 
     const [logs, total] = await Promise.all([
       prisma.auditLog.findMany({
@@ -630,10 +652,7 @@ const getDashboardStats = async (req, res) => {
       prisma.user.count({ where: { status: 'ACTIVE' } }),
       prisma.department.count({ where: { isActive: true } }),
       prisma.visit.count({
-        where: {
-          visitType:  'EMERGENCY',
-          visitDate:  { gte: today }
-        }
+        where: { visitType: 'EMERGENCY', visitDate: { gte: today } }
       })
     ])
 
@@ -643,7 +662,7 @@ const getDashboardStats = async (req, res) => {
       admitted,
       pendingLabs,
       pendingPrescriptions,
-      emergency:        emergencyVisits,
+      emergency:       emergencyVisits,
       totalUsers,
       totalDepartments
     }, 'Stats retrieved')
