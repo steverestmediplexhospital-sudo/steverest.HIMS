@@ -8,7 +8,8 @@ import {
   Heart, Activity, Thermometer, Wind, Droplets, Clock,
   BedDouble, FileText, Pill, AlertTriangle, CheckCircle2,
   Plus, RefreshCw, User, ChevronRight, X, Save,
-  Syringe, ClipboardList, Users, TrendingUp, Bot
+  Syringe, ClipboardList, Users, TrendingUp, Bot,
+  Edit3, FileEdit, ChevronDown, ChevronUp
 } from "lucide-react"
 
 const TABS = [
@@ -19,7 +20,6 @@ const TABS = [
   { id: "beds",   label: "Bed Management",     icon: BedDouble    }
 ]
 
-// ── Defensive array extractor ─────────────────────────────────────────────────
 const extractArray = (payload, ...keys) => {
   if (Array.isArray(payload)) return payload
   for (const key of keys) {
@@ -44,17 +44,12 @@ export default function NursingPage() {
         api.get("/nursing/queue"),
         api.get("/nursing/beds")
       ])
-
-      // ✅ FIXED: defensive extraction — backend may wrap in admissions/queue/array
       const qData = qRes.status === "fulfilled" ? qRes.value.data?.data : null
       const queue  = extractArray(qData, "admissions", "queue", "visits")
-
       const bData = bRes.status === "fulfilled" ? bRes.value.data?.data : null
       const beds   = extractArray(bData, "beds")
-
       setStats({
         queue:     queue.length,
-        // ✅ FIXED: schema uses pulse not heartRate
         vitalsdue: queue.filter(a => !a.visit?.vitalSigns?.length).length,
         medsdue:   0,
         beds:      beds.filter(b => b.status === "AVAILABLE").length
@@ -163,7 +158,6 @@ function NursingQueue({ navigate }) {
   const fetchQueue = async () => {
     try {
       const res     = await api.get("/nursing/queue")
-      // ✅ FIXED: defensive extraction
       const payload = res.data?.data
       const list    = extractArray(payload, "admissions", "queue", "visits")
       setAdmissions(list)
@@ -219,7 +213,6 @@ function NursingQueue({ navigate }) {
         </div>
       ) : (
         filtered.map(admission => {
-          // ✅ FIXED: vitalSigns is array — take first; uses pulse not heartRate
           const vital       = Array.isArray(admission.visit?.vitalSigns)
             ? admission.visit.vitalSigns[0]
             : null
@@ -245,13 +238,9 @@ function NursingQueue({ navigate }) {
                     <div className="flex items-center gap-2 flex-wrap mt-0.5">
                       <span className="text-xs text-gray-400">{admission.patient?.mrn}</span>
                       <span className="text-xs text-gray-300">•</span>
-                      <span className="text-xs text-gray-400">
-                        {admission.bed?.room?.ward?.name}
-                      </span>
+                      <span className="text-xs text-gray-400">{admission.bed?.room?.ward?.name}</span>
                       <span className="text-xs text-gray-300">•</span>
-                      <span className="text-xs font-medium text-blue-600">
-                        Bed {admission.bed?.bedNumber}
-                      </span>
+                      <span className="text-xs font-medium text-blue-600">Bed {admission.bed?.bedNumber}</span>
                       <span className="text-xs text-gray-300">•</span>
                       <span className="text-xs text-gray-400">Day {daysAdmitted + 1}</span>
                     </div>
@@ -259,39 +248,16 @@ function NursingQueue({ navigate }) {
                     {vital ? (
                       <div className="flex gap-3 mt-2 flex-wrap">
                         {[
-                          {
-                            l: "BP",
-                            v: `${vital.bloodPressureSystolic}/${vital.bloodPressureDiastolic}`,
-                            alert: vital.bloodPressureSystolic > 140
-                          },
-                          {
-                            // ✅ FIXED: pulse not heartRate
-                            l: "HR",
-                            v: vital.pulse ? `${vital.pulse} bpm` : null,
-                            alert: vital.pulse > 100 || vital.pulse < 60
-                          },
-                          {
-                            l: "T",
-                            v: vital.temperature ? `${vital.temperature}°C` : null,
-                            alert: vital.temperature > 37.5
-                          },
-                          {
-                            l: "SpO₂",
-                            v: vital.oxygenSaturation ? `${vital.oxygenSaturation}%` : null,
-                            alert: vital.oxygenSaturation < 95
-                          },
-                          {
-                            l: "RR",
-                            v: vital.respiratoryRate ? `${vital.respiratoryRate}/min` : null,
-                            alert: vital.respiratoryRate > 20
-                          }
+                          { l: "BP", v: `${vital.bloodPressureSystolic}/${vital.bloodPressureDiastolic}`, alert: vital.bloodPressureSystolic > 140 },
+                          { l: "HR", v: vital.pulse ? `${vital.pulse} bpm` : null, alert: vital.pulse > 100 || vital.pulse < 60 },
+                          { l: "T",  v: vital.temperature ? `${vital.temperature}°C` : null, alert: vital.temperature > 37.5 },
+                          { l: "SpO₂", v: vital.oxygenSaturation ? `${vital.oxygenSaturation}%` : null, alert: vital.oxygenSaturation < 95 },
+                          { l: "RR", v: vital.respiratoryRate ? `${vital.respiratoryRate} cpm` : null, alert: vital.respiratoryRate > 20 }
                         ].filter(x => x.v && !x.v.includes("undefined") && !x.v.includes("null")).map(x => (
                           <span
                             key={x.l}
                             className={`text-xs px-2 py-0.5 rounded-full ${
-                              x.alert
-                                ? "bg-red-100 text-red-700 font-medium"
-                                : "bg-gray-100 text-gray-600"
+                              x.alert ? "bg-red-100 text-red-700 font-medium" : "bg-gray-100 text-gray-600"
                             }`}
                           >
                             {x.l}: {x.v}
@@ -339,21 +305,41 @@ function VitalsEntry() {
   const [selectedVisit, setSelectedVisit] = useState("")
   const [loading,       setLoading]       = useState(false)
   const [submitting,    setSubmitting]    = useState(false)
+
+  // ── NEW: auto-set timestamp to now, adjustable ─────────────────────────────
+  const nowLocal = () => {
+    const d = new Date()
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
+    return d.toISOString().slice(0, 16)
+  }
+
   const [form, setForm] = useState({
-    bloodPressureSystolic:  "",
-    bloodPressureDiastolic: "",
-    heartRate:       "",   // displayed as HR — mapped to pulse on submit
-    respiratoryRate: "",
-    temperature:     "",
-    oxygenSaturation:"",
-    weight:          "",
-    height:          "",
-    bloodGlucose:    "",   // not in schema — shown for completeness, skipped on submit
-    painScore:       "0",
-    gcsScore:        "",   // not a separate field — skipped on submit
-    pupilReaction:   "",   // not in schema — skipped
-    urineOutput:     "",   // not in schema — skipped
-    notes:           ""
+    // existing fields
+    heartRate:              "",
+    temperature:            "",
+    oxygenSaturation:       "",
+    weight:                 "",
+    height:                 "",
+    bloodGlucose:           "",
+    painScore:              "0",
+    gcsScore:               "",
+    pupilReaction:          "",
+    urineOutput:            "",
+    notes:                  "",
+    respiratoryRate:        "",
+    // ── NEW BP fields ─────────────────────────────────────────────────────
+    bpSittingSystolic:      "",
+    bpSittingDiastolic:     "",
+    bpStandingSystolic:     "",
+    bpStandingDiastolic:    "",
+    bpSupineSystolic:       "",
+    bpSupineDiastolic:      "",
+    bpLocation:             "LEFT_ARM",
+    // ── NEW SpO2 fields ───────────────────────────────────────────────────
+    spo2OnOxygen:           false,
+    oxygenLitresPerMin:     "",
+    // ── NEW timestamp ─────────────────────────────────────────────────────
+    recordedAt:             nowLocal()
   })
 
   useEffect(() => { fetchActiveVisits() }, [])
@@ -361,9 +347,8 @@ function VitalsEntry() {
   const fetchActiveVisits = async () => {
     setLoading(true)
     try {
-      const res     = await api.get("/nursing/queue")
-      const payload = res.data?.data
-      // ✅ FIXED: defensive extraction
+      const res        = await api.get("/nursing/queue")
+      const payload    = res.data?.data
       const admissions = extractArray(payload, "admissions", "queue", "visits")
       setVisits(
         admissions
@@ -382,34 +367,80 @@ function VitalsEntry() {
 
   const set = (field, val) => setForm(p => ({ ...p, [field]: val }))
 
+  // ── Auto-calculate BMI ─────────────────────────────────────────────────────
+  const bmi = (() => {
+    const w = parseFloat(form.weight)
+    const h = parseFloat(form.height)
+    if (!w || !h || h === 0) return null
+    const hm = h / 100
+    return (w / (hm * hm)).toFixed(1)
+  })()
+
+  const bmiCategory = (bmi) => {
+    if (!bmi) return null
+    const b = parseFloat(bmi)
+    if (b < 18.5) return { label: "Underweight", color: "text-blue-600" }
+    if (b < 25)   return { label: "Normal",       color: "text-green-600" }
+    if (b < 30)   return { label: "Overweight",   color: "text-orange-600" }
+    return               { label: "Obese",         color: "text-red-600" }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!selectedVisit) { toast.error("Select a patient"); return }
     setSubmitting(true)
     try {
-      // ✅ FIXED: map frontend field names to correct schema field names
       const payload = { visitId: selectedVisit }
 
-      if (form.bloodPressureSystolic)  payload.bloodPressureSystolic  = parseInt(form.bloodPressureSystolic)
-      if (form.bloodPressureDiastolic) payload.bloodPressureDiastolic = parseInt(form.bloodPressureDiastolic)
-      if (form.heartRate)       payload.pulse           = parseInt(form.heartRate)       // ✅ heartRate → pulse
-      if (form.respiratoryRate) payload.respiratoryRate = parseInt(form.respiratoryRate)
-      if (form.temperature)     payload.temperature     = parseFloat(form.temperature)
-      if (form.oxygenSaturation)payload.oxygenSaturation= parseFloat(form.oxygenSaturation)
-      if (form.weight)          payload.weight          = parseFloat(form.weight)
-      if (form.height)          payload.height          = parseFloat(form.height)
-      if (form.painScore)       payload.painScore       = parseInt(form.painScore)
-      if (form.notes)           payload.notes           = form.notes
-      // bloodGlucose, gcsScore, pupilReaction, urineOutput — not in VitalSign schema, omitted
+      // Sitting BP as primary (required by schema)
+      if (form.bpSittingSystolic)  payload.bloodPressureSystolic  = parseInt(form.bpSittingSystolic)
+      if (form.bpSittingDiastolic) payload.bloodPressureDiastolic = parseInt(form.bpSittingDiastolic)
+
+      if (form.heartRate)       payload.pulse            = parseInt(form.heartRate)
+      if (form.respiratoryRate) payload.respiratoryRate  = parseInt(form.respiratoryRate)
+      if (form.temperature)     payload.temperature      = parseFloat(form.temperature)
+      if (form.oxygenSaturation)payload.oxygenSaturation = parseFloat(form.oxygenSaturation)
+      if (form.weight)          payload.weight           = parseFloat(form.weight)
+      if (form.height)          payload.height           = parseFloat(form.height)
+      if (form.painScore)       payload.painScore        = parseInt(form.painScore)
+      if (bmi)                  payload.bmi              = parseFloat(bmi)
+
+      // ── NEW fields stored in notes as structured JSON if not in schema ──
+      // Build enriched notes including extra BP positions & SpO2 detail
+      const extraNotes = []
+      if (form.bpStandingSystolic && form.bpStandingDiastolic)
+        extraNotes.push(`Standing BP: ${form.bpStandingSystolic}/${form.bpStandingDiastolic} mmHg`)
+      if (form.bpSupineSystolic && form.bpSupineDiastolic)
+        extraNotes.push(`Supine BP: ${form.bpSupineSystolic}/${form.bpSupineDiastolic} mmHg`)
+      if (form.bpLocation)
+        extraNotes.push(`BP Site: ${form.bpLocation.replace(/_/g, " ")}`)
+      if (form.spo2OnOxygen)
+        extraNotes.push(`SpO2 on O₂: ${form.oxygenLitresPerMin || "?"}L/min`)
+      else
+        extraNotes.push("SpO2: Room Air")
+
+      const fullNotes = [
+        ...extraNotes,
+        form.notes ? `Notes: ${form.notes}` : ""
+      ].filter(Boolean).join(" | ")
+
+      if (fullNotes) payload.notes = fullNotes
+      if (form.recordedAt) payload.recordedAt = new Date(form.recordedAt).toISOString()
 
       await api.post("/nursing/vitals", payload)
-      toast.success("Vitals recorded successfully!")
+      toast.success("✅ Vitals saved to EMR successfully!")
+
       setForm({
-        bloodPressureSystolic: "", bloodPressureDiastolic: "",
-        heartRate: "", respiratoryRate: "", temperature: "",
-        oxygenSaturation: "", weight: "", height: "",
-        bloodGlucose: "", painScore: "0", gcsScore: "",
-        pupilReaction: "", urineOutput: "", notes: ""
+        heartRate: "", temperature: "", oxygenSaturation: "",
+        weight: "", height: "", bloodGlucose: "", painScore: "0",
+        gcsScore: "", pupilReaction: "", urineOutput: "", notes: "",
+        respiratoryRate: "",
+        bpSittingSystolic: "", bpSittingDiastolic: "",
+        bpStandingSystolic: "", bpStandingDiastolic: "",
+        bpSupineSystolic: "", bpSupineDiastolic: "",
+        bpLocation: "LEFT_ARM",
+        spo2OnOxygen: false, oxygenLitresPerMin: "",
+        recordedAt: nowLocal()
       })
     } catch (e) {
       toast.error(e.response?.data?.message || "Failed to record vitals")
@@ -418,13 +449,24 @@ function VitalsEntry() {
     }
   }
 
-  const bpAlert   = form.bloodPressureSystolic && (parseInt(form.bloodPressureSystolic) > 140 || parseInt(form.bloodPressureSystolic) < 90)
-  const tempAlert  = form.temperature   && (parseFloat(form.temperature) > 37.5   || parseFloat(form.temperature) < 35)
-  const spo2Alert  = form.oxygenSaturation && parseInt(form.oxygenSaturation) < 95
-  const hrAlert    = form.heartRate     && (parseInt(form.heartRate) > 100        || parseInt(form.heartRate) < 60)
+  // ── Alert conditions ───────────────────────────────────────────────────────
+  const bpAlert  = form.bpSittingSystolic && (parseInt(form.bpSittingSystolic) > 140 || parseInt(form.bpSittingSystolic) < 90)
+  const tempAlert = form.temperature   && (parseFloat(form.temperature) > 37.5  || parseFloat(form.temperature) < 35)
+  const spo2Alert = form.oxygenSaturation && parseInt(form.oxygenSaturation) < 95
+  const hrAlert   = form.heartRate     && (parseInt(form.heartRate) > 100       || parseInt(form.heartRate) < 60)
+  const rrAlert   = form.respiratoryRate && (parseInt(form.respiratoryRate) > 20 || parseInt(form.respiratoryRate) < 12)
+
+  const BP_LOCATIONS = [
+    { value: "LEFT_ARM",  label: "Left Arm"  },
+    { value: "RIGHT_ARM", label: "Right Arm" },
+    { value: "LEFT_LEG",  label: "Left Leg"  },
+    { value: "RIGHT_LEG", label: "Right Leg" }
+  ]
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+
+      {/* Patient selector */}
       <div>
         <label className="block text-sm font-semibold text-gray-700 mb-2">
           Select Patient <span className="text-red-500">*</span>
@@ -439,39 +481,138 @@ function VitalsEntry() {
         </select>
       </div>
 
-      {/* Vital Signs Grid */}
+      {/* ── ADJUSTABLE TIMESTAMP ─────────────────────────────────────────────── */}
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+        <label className="block text-sm font-semibold text-blue-700 mb-2 flex items-center gap-2">
+          <Clock className="w-4 h-4" /> Vitals Recorded At
+          <span className="text-xs font-normal text-blue-500">(adjustable — defaults to now)</span>
+        </label>
+        <input
+          type="datetime-local"
+          value={form.recordedAt}
+          onChange={e => set("recordedAt", e.target.value)}
+          className="w-full md:w-72 border border-blue-300 rounded-lg px-4 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+        />
+      </div>
+
+      {/* ── VITAL SIGNS ──────────────────────────────────────────────────────── */}
       <div>
-        <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+        <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
           <Heart className="w-4 h-4 text-pink-600" /> Vital Signs
         </h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {/* Blood Pressure */}
-          <div className={`col-span-2 border rounded-xl p-4 ${bpAlert ? "border-red-300 bg-red-50" : "border-gray-200"}`}>
-            <label className="block text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1">
-              <Heart className="w-3 h-3" /> Blood Pressure (mmHg)
-              {bpAlert && <span className="text-red-500 text-xs ml-1">⚠ Alert</span>}
-            </label>
-            <div className="flex gap-2 items-center">
-              <input
-                type="number"
-                value={form.bloodPressureSystolic}
-                onChange={e => set("bloodPressureSystolic", e.target.value)}
-                placeholder="Systolic"
-                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
-              />
-              <span className="text-gray-400 font-bold">/</span>
-              <input
-                type="number"
-                value={form.bloodPressureDiastolic}
-                onChange={e => set("bloodPressureDiastolic", e.target.value)}
-                placeholder="Diastolic"
-                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
-              />
+
+        {/* ── BLOOD PRESSURE SECTION — ENHANCED ────────────────────────────── */}
+        <div className={`border-2 rounded-xl p-5 mb-4 ${bpAlert ? "border-red-300 bg-red-50" : "border-gray-200 bg-gray-50"}`}>
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+              <Heart className="w-4 h-4 text-pink-600" /> Blood Pressure (mmHg)
+              {bpAlert && <span className="text-red-500 text-xs bg-red-100 px-2 py-0.5 rounded-full">⚠ Alert</span>}
+            </h4>
+            {/* BP Location */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500 font-medium">Site:</span>
+              <div className="flex gap-1">
+                {BP_LOCATIONS.map(loc => (
+                  <button
+                    key={loc.value}
+                    type="button"
+                    onClick={() => set("bpLocation", loc.value)}
+                    className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
+                      form.bpLocation === loc.value
+                        ? "bg-pink-600 text-white"
+                        : "bg-white border border-gray-200 text-gray-600 hover:border-pink-300"
+                    }`}
+                  >
+                    {loc.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <p className="text-xs text-gray-400 mt-1">Normal: 90-120 / 60-80</p>
           </div>
 
-          {/* Heart Rate — stored as pulse in DB */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Sitting BP */}
+            <div className="bg-white border border-gray-200 rounded-xl p-3">
+              <label className="block text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1">
+                🪑 Sitting BP
+              </label>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  value={form.bpSittingSystolic}
+                  onChange={e => set("bpSittingSystolic", e.target.value)}
+                  placeholder="Sys"
+                  className="flex-1 border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
+                />
+                <span className="text-gray-400 font-bold text-sm">/</span>
+                <input
+                  type="number"
+                  value={form.bpSittingDiastolic}
+                  onChange={e => set("bpSittingDiastolic", e.target.value)}
+                  placeholder="Dia"
+                  className="flex-1 border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
+                />
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Primary reading</p>
+            </div>
+
+            {/* Standing BP */}
+            <div className="bg-white border border-gray-200 rounded-xl p-3">
+              <label className="block text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1">
+                🧍 Standing BP
+              </label>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  value={form.bpStandingSystolic}
+                  onChange={e => set("bpStandingSystolic", e.target.value)}
+                  placeholder="Sys"
+                  className="flex-1 border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
+                />
+                <span className="text-gray-400 font-bold text-sm">/</span>
+                <input
+                  type="number"
+                  value={form.bpStandingDiastolic}
+                  onChange={e => set("bpStandingDiastolic", e.target.value)}
+                  placeholder="Dia"
+                  className="flex-1 border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
+                />
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Orthostatic check</p>
+            </div>
+
+            {/* Lying Supine BP */}
+            <div className="bg-white border border-gray-200 rounded-xl p-3">
+              <label className="block text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1">
+                🛏 Lying Supine BP
+              </label>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  value={form.bpSupineSystolic}
+                  onChange={e => set("bpSupineSystolic", e.target.value)}
+                  placeholder="Sys"
+                  className="flex-1 border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
+                />
+                <span className="text-gray-400 font-bold text-sm">/</span>
+                <input
+                  type="number"
+                  value={form.bpSupineDiastolic}
+                  onChange={e => set("bpSupineDiastolic", e.target.value)}
+                  placeholder="Dia"
+                  className="flex-1 border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
+                />
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Lying flat</p>
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 mt-3">Normal: 90-120 / 60-80 mmHg</p>
+        </div>
+
+        {/* ── OTHER VITALS GRID ─────────────────────────────────────────────── */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+
+          {/* Heart Rate */}
           <div className={`border rounded-xl p-4 ${hrAlert ? "border-red-300 bg-red-50" : "border-gray-200"}`}>
             <label className="block text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1">
               <Activity className="w-3 h-3" /> Heart Rate (bpm)
@@ -503,8 +644,8 @@ function VitalsEntry() {
             <p className="text-xs text-gray-400 mt-1">Normal: 36.1-37.2°C</p>
           </div>
 
-          {/* SpO2 */}
-          <div className={`border rounded-xl p-4 ${spo2Alert ? "border-red-300 bg-red-50" : "border-gray-200"}`}>
+          {/* ── SpO2 ENHANCED ─────────────────────────────────────────────── */}
+          <div className={`border rounded-xl p-4 col-span-2 md:col-span-1 ${spo2Alert ? "border-red-300 bg-red-50" : "border-gray-200"}`}>
             <label className="block text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1">
               <Wind className="w-3 h-3" /> SpO₂ (%)
               {spo2Alert && <span className="text-red-500 text-xs ml-1">⚠ LOW</span>}
@@ -514,15 +655,53 @@ function VitalsEntry() {
               value={form.oxygenSaturation}
               onChange={e => set("oxygenSaturation", e.target.value)}
               placeholder="e.g. 98" min="0" max="100"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 mb-2"
             />
+            {/* Room Air / On Oxygen toggle */}
+            <div className="flex items-center gap-2 mt-1">
+              <button
+                type="button"
+                onClick={() => set("spo2OnOxygen", false)}
+                className={`flex-1 py-1 rounded-lg text-xs font-medium transition-colors ${
+                  !form.spo2OnOxygen
+                    ? "bg-green-600 text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                🌬 Room Air
+              </button>
+              <button
+                type="button"
+                onClick={() => set("spo2OnOxygen", true)}
+                className={`flex-1 py-1 rounded-lg text-xs font-medium transition-colors ${
+                  form.spo2OnOxygen
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                🫁 On O₂
+              </button>
+            </div>
+            {form.spo2OnOxygen && (
+              <div className="mt-2">
+                <input
+                  type="number"
+                  step="0.5"
+                  value={form.oxygenLitresPerMin}
+                  onChange={e => set("oxygenLitresPerMin", e.target.value)}
+                  placeholder="O₂ flow (L/min)"
+                  className="w-full border border-blue-300 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400 bg-blue-50"
+                />
+              </div>
+            )}
             <p className="text-xs text-gray-400 mt-1">Normal: ≥ 95%</p>
           </div>
 
-          {/* Respiratory Rate */}
-          <div className="border border-gray-200 rounded-xl p-4">
-            <label className="block text-xs font-semibold text-gray-500 mb-2">
-              Resp. Rate (/min)
+          {/* ── RESPIRATORY RATE — updated label to cpm ───────────────────── */}
+          <div className={`border rounded-xl p-4 ${rrAlert ? "border-orange-300 bg-orange-50" : "border-gray-200"}`}>
+            <label className="block text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1">
+              <Wind className="w-3 h-3" /> Respiration (cpm)
+              {rrAlert && <span className="text-orange-500 text-xs ml-1">⚠</span>}
             </label>
             <input
               type="number"
@@ -531,7 +710,7 @@ function VitalsEntry() {
               placeholder="e.g. 16"
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
             />
-            <p className="text-xs text-gray-400 mt-1">Normal: 12-20/min</p>
+            <p className="text-xs text-gray-400 mt-1">Normal: 12-20 cpm</p>
           </div>
 
           {/* Blood Glucose */}
@@ -573,6 +752,26 @@ function VitalsEntry() {
             />
           </div>
 
+          {/* ── BMI — AUTO CALCULATED ─────────────────────────────────────── */}
+          <div className={`border-2 rounded-xl p-4 ${bmi ? "border-pink-200 bg-pink-50" : "border-gray-200"}`}>
+            <label className="block text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1">
+              <TrendingUp className="w-3 h-3" /> BMI (auto-calculated)
+            </label>
+            <div className="flex items-center gap-2 mt-1">
+              <span className={`text-2xl font-bold ${bmi ? "text-pink-700" : "text-gray-300"}`}>
+                {bmi || "—"}
+              </span>
+              {bmi && bmiCategory(bmi) && (
+                <span className={`text-xs font-semibold ${bmiCategory(bmi).color}`}>
+                  {bmiCategory(bmi).label}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              {bmi ? `${form.weight}kg / ${form.height}cm` : "Enter weight + height"}
+            </p>
+          </div>
+
           {/* GCS */}
           <div className="border border-gray-200 rounded-xl p-4">
             <label className="block text-xs font-semibold text-gray-500 mb-2">GCS Score (3-15)</label>
@@ -588,9 +787,7 @@ function VitalsEntry() {
 
           {/* Urine Output */}
           <div className="border border-gray-200 rounded-xl p-4">
-            <label className="block text-xs font-semibold text-gray-500 mb-2">
-              Urine Output (ml/hr)
-            </label>
+            <label className="block text-xs font-semibold text-gray-500 mb-2">Urine Output (ml/hr)</label>
             <input
               type="number"
               value={form.urineOutput}
@@ -600,6 +797,7 @@ function VitalsEntry() {
             />
             <p className="text-xs text-gray-400 mt-1">Normal: ≥ 0.5 ml/kg/hr</p>
           </div>
+
         </div>
       </div>
 
@@ -608,11 +806,9 @@ function VitalsEntry() {
         <label className="block text-sm font-semibold text-gray-700 mb-3">
           Pain Score:{" "}
           <span className={`font-bold ${
-            parseInt(form.painScore) >= 7
-              ? "text-red-600"
-              : parseInt(form.painScore) >= 4
-                ? "text-orange-600"
-                : "text-green-600"
+            parseInt(form.painScore) >= 7 ? "text-red-600"
+              : parseInt(form.painScore) >= 4 ? "text-orange-600"
+              : "text-green-600"
           }`}>
             {form.painScore}/10
           </span>
@@ -624,18 +820,14 @@ function VitalsEntry() {
           className="w-full accent-pink-600"
         />
         <div className="flex justify-between text-xs text-gray-400 mt-1">
-          <span>0 - No Pain</span>
-          <span>5 - Moderate</span>
-          <span>10 - Worst</span>
+          <span>0 - No Pain</span><span>5 - Moderate</span><span>10 - Worst</span>
         </div>
         <div className="flex justify-between mt-1">
           {[0,1,2,3,4,5,6,7,8,9,10].map(n => (
             <div
               key={n}
               className={`w-6 h-6 rounded-full text-xs flex items-center justify-center font-medium ${
-                parseInt(form.painScore) === n
-                  ? "bg-pink-600 text-white"
-                  : "bg-gray-100 text-gray-500"
+                parseInt(form.painScore) === n ? "bg-pink-600 text-white" : "bg-gray-100 text-gray-500"
               }`}
             >
               {n}
@@ -644,29 +836,21 @@ function VitalsEntry() {
         </div>
       </div>
 
-      {/* Notes */}
-      <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-2">Clinical Notes</label>
-        <textarea
-          value={form.notes}
-          onChange={e => set("notes", e.target.value)}
-          placeholder="Any observations, patient complaints, changes in condition..."
-          rows={3}
-          className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
-        />
-      </div>
+      {/* ── CLINICAL NOTES WITH DOCUMENTATION ICON + EDITABLE SUB-HEADERS ─── */}
+      <ClinicalNotesSection notes={form.notes} onChange={val => set("notes", val)} />
 
-      {/* Critical Alerts Summary */}
-      {(bpAlert || tempAlert || spo2Alert || hrAlert) && (
+      {/* Critical Alerts */}
+      {(bpAlert || tempAlert || spo2Alert || hrAlert || rrAlert) && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4">
           <p className="text-red-700 font-semibold text-sm flex items-center gap-2 mb-2">
             <AlertTriangle className="w-4 h-4" /> Critical Values Detected — Notify Doctor
           </p>
           <div className="flex flex-wrap gap-2">
-            {bpAlert   && <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded">BP: {form.bloodPressureSystolic}/{form.bloodPressureDiastolic} mmHg</span>}
+            {bpAlert   && <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded">BP: {form.bpSittingSystolic}/{form.bpSittingDiastolic} mmHg</span>}
             {hrAlert   && <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded">HR: {form.heartRate} bpm</span>}
             {tempAlert && <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded">Temp: {form.temperature}°C</span>}
             {spo2Alert && <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded">SpO₂: {form.oxygenSaturation}%</span>}
+            {rrAlert   && <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded">RR: {form.respiratoryRate} cpm</span>}
           </div>
         </div>
       )}
@@ -677,9 +861,188 @@ function VitalsEntry() {
         className="w-full bg-pink-600 text-white py-3 rounded-xl font-semibold hover:bg-pink-700 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
       >
         <Save className="w-5 h-5" />
-        {submitting ? "Recording Vitals..." : "Save Vital Signs"}
+        {submitting ? "Saving to EMR..." : "Save Vital Signs to EMR"}
       </button>
     </form>
+  )
+}
+
+// ── Clinical Notes Section with Documentation Icon + Editable Sub-headers ─────
+function ClinicalNotesSection({ notes, onChange }) {
+  const DEFAULT_SECTIONS = [
+    { id: 1, title: "General Observations",       content: "" },
+    { id: 2, title: "Patient Complaints",          content: "" },
+    { id: 3, title: "Interventions Performed",     content: "" },
+    { id: 4, title: "Patient Response",            content: "" },
+    { id: 5, title: "Communication with Team",     content: "" },
+  ]
+
+  const [sections,    setSections]    = useState(DEFAULT_SECTIONS)
+  const [editingId,   setEditingId]   = useState(null)
+  const [editTitle,   setEditTitle]   = useState("")
+  const [collapsed,   setCollapsed]   = useState({})
+  const [useStructured, setUseStructured] = useState(true)
+
+  // Sync structured sections → parent notes string
+  useEffect(() => {
+    if (!useStructured) return
+    const combined = sections
+      .filter(s => s.content.trim())
+      .map(s => `[${s.title}]\n${s.content}`)
+      .join("\n\n")
+    onChange(combined)
+  }, [sections, useStructured])
+
+  const updateSection = (id, field, value) => {
+    setSections(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s))
+  }
+
+  const startEditTitle = (section) => {
+    setEditingId(section.id)
+    setEditTitle(section.title)
+  }
+
+  const saveTitle = (id) => {
+    if (editTitle.trim()) updateSection(id, "title", editTitle.trim())
+    setEditingId(null)
+  }
+
+  const addSection = () => {
+    const newId = Date.now()
+    setSections(prev => [...prev, { id: newId, title: "New Section", content: "" }])
+    setEditingId(newId)
+    setEditTitle("New Section")
+  }
+
+  const removeSection = (id) => {
+    setSections(prev => prev.filter(s => s.id !== id))
+  }
+
+  const toggleCollapse = (id) => {
+    setCollapsed(prev => ({ ...prev, [id]: !prev[id] }))
+  }
+
+  return (
+    <div className="border border-gray-200 rounded-xl overflow-hidden">
+      {/* Section Header */}
+      <div className="bg-gray-50 border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <FileEdit className="w-5 h-5 text-pink-600" />
+          <span className="text-sm font-bold text-gray-700">Clinical Documentation</span>
+          <span className="text-xs text-gray-400 bg-gray-200 px-2 py-0.5 rounded-full">
+            {sections.filter(s => s.content.trim()).length}/{sections.length} sections filled
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Toggle structured/freetext */}
+          <button
+            type="button"
+            onClick={() => setUseStructured(v => !v)}
+            className="text-xs px-3 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors"
+          >
+            {useStructured ? "📝 Free Text" : "📋 Structured"}
+          </button>
+          {useStructured && (
+            <button
+              type="button"
+              onClick={addSection}
+              className="text-xs px-3 py-1 rounded-lg bg-pink-600 text-white hover:bg-pink-700 flex items-center gap-1"
+            >
+              <Plus className="w-3 h-3" /> Add Section
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="p-4 space-y-3">
+        {useStructured ? (
+          sections.map((section, idx) => (
+            <div key={section.id} className="border border-gray-200 rounded-xl overflow-hidden">
+              {/* Sub-header — editable */}
+              <div className="flex items-center justify-between bg-gray-50 px-3 py-2 border-b border-gray-200">
+                <div className="flex items-center gap-2 flex-1">
+                  <span className="text-xs font-bold text-pink-600 bg-pink-50 w-5 h-5 rounded-full flex items-center justify-center">
+                    {idx + 1}
+                  </span>
+                  {editingId === section.id ? (
+                    <div className="flex items-center gap-2 flex-1">
+                      <input
+                        autoFocus
+                        value={editTitle}
+                        onChange={e => setEditTitle(e.target.value)}
+                        onBlur={() => saveTitle(section.id)}
+                        onKeyDown={e => { if (e.key === "Enter") saveTitle(section.id) }}
+                        className="flex-1 border border-pink-300 rounded-lg px-2 py-0.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-pink-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => saveTitle(section.id)}
+                        className="text-xs text-pink-600 font-medium hover:underline"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-sm font-semibold text-gray-700 flex-1">
+                      {section.title}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => startEditTitle(section)}
+                    title="Edit section title"
+                    className="p-1 text-gray-400 hover:text-pink-600 rounded transition-colors"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleCollapse(section.id)}
+                    className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors"
+                  >
+                    {collapsed[section.id]
+                      ? <ChevronDown className="w-3.5 h-3.5" />
+                      : <ChevronUp   className="w-3.5 h-3.5" />
+                    }
+                  </button>
+                  {sections.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeSection(section.id)}
+                      className="p-1 text-gray-400 hover:text-red-500 rounded transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Content area */}
+              {!collapsed[section.id] && (
+                <textarea
+                  value={section.content}
+                  onChange={e => updateSection(section.id, "content", e.target.value)}
+                  placeholder={`Enter ${section.title.toLowerCase()}...`}
+                  rows={3}
+                  className="w-full px-4 py-3 text-sm text-gray-700 focus:outline-none focus:bg-pink-50 resize-none transition-colors"
+                />
+              )}
+            </div>
+          ))
+        ) : (
+          /* Free-text fallback */
+          <textarea
+            value={notes}
+            onChange={e => onChange(e.target.value)}
+            placeholder="Any observations, patient complaints, changes in condition, interventions, team communications..."
+            rows={6}
+            className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
+          />
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -691,12 +1054,8 @@ function MedicationAdmin() {
   const [selectedAdm,  setSelectedAdm]  = useState(null)
   const [loading,      setLoading]      = useState(true)
   const [form, setForm] = useState({
-    admissionId:    "",
-    drugName:       "",
-    dose:           "",
-    route:          "ORAL",
-    administeredAt: "",
-    notes:          ""
+    admissionId: "", drugName: "", dose: "", route: "ORAL",
+    administeredAt: "", notes: ""
   })
   const [submitting, setSubmitting] = useState(false)
 
@@ -709,12 +1068,7 @@ function MedicationAdmin() {
       const payload = res.data?.data
       const list    = extractArray(payload, "activeAdmissions", "admissions", "queue")
       setAdmissions(list)
-
-      // fetch med records for first admission if any
-      if (list.length > 0) {
-        fetchRecords(list[0].id)
-        setSelectedAdm(list[0])
-      }
+      if (list.length > 0) { fetchRecords(list[0].id); setSelectedAdm(list[0]) }
     } catch (e) {
       console.error("fetchAdmissions error:", e)
       setAdmissions([])
@@ -729,9 +1083,7 @@ function MedicationAdmin() {
       const res  = await api.get(`/nursing/medication-admin/${admissionId}`)
       const data = res.data?.data
       setRecords(Array.isArray(data) ? data : [])
-    } catch (e) {
-      setRecords([])
-    }
+    } catch (e) { setRecords([]) }
   }
 
   const handleAdmissionChange = (admId) => {
@@ -743,12 +1095,8 @@ function MedicationAdmin() {
 
   const openModal = () => {
     setForm({
-      admissionId:    selectedAdm?.id || "",
-      drugName:       "",
-      dose:           "",
-      route:          "ORAL",
-      administeredAt: new Date().toISOString().slice(0, 16),
-      notes:          ""
+      admissionId: selectedAdm?.id || "", drugName: "", dose: "", route: "ORAL",
+      administeredAt: new Date().toISOString().slice(0, 16), notes: ""
     })
     setShowModal(true)
   }
@@ -758,17 +1106,13 @@ function MedicationAdmin() {
     if (!form.admissionId) return toast.error("Select a patient")
     if (!form.drugName.trim()) return toast.error("Enter drug name")
     if (!form.dose.trim()) return toast.error("Enter dose")
-    if (!form.route) return toast.error("Select route")
-
     setSubmitting(true)
     try {
       await api.post("/nursing/medication-admin", {
-        admissionId:    form.admissionId,
-        drugName:       form.drugName,
-        dose:           form.dose,
-        route:          form.route,
+        admissionId: form.admissionId, drugName: form.drugName,
+        dose: form.dose, route: form.route,
         administeredAt: form.administeredAt || new Date().toISOString(),
-        notes:          form.notes
+        notes: form.notes
       })
       toast.success("Medication administration recorded!")
       setShowModal(false)
@@ -780,28 +1124,19 @@ function MedicationAdmin() {
     }
   }
 
-  const ROUTES = ["ORAL", "IV", "IM", "SC", "SL", "TOPICAL", "INHALATION", "RECTAL", "NASAL"]
-
+  const ROUTES = ["ORAL","IV","IM","SC","SL","TOPICAL","INHALATION","RECTAL","NASAL"]
   const ROUTE_COLOR = {
-    ORAL:       "bg-blue-100 text-blue-700",
-    IV:         "bg-red-100 text-red-700",
-    IM:         "bg-orange-100 text-orange-700",
-    SC:         "bg-yellow-100 text-yellow-700",
-    SL:         "bg-purple-100 text-purple-700",
-    TOPICAL:    "bg-green-100 text-green-700",
-    INHALATION: "bg-cyan-100 text-cyan-700",
-    RECTAL:     "bg-gray-100 text-gray-700",
-    NASAL:      "bg-pink-100 text-pink-700",
+    ORAL: "bg-blue-100 text-blue-700", IV: "bg-red-100 text-red-700",
+    IM: "bg-orange-100 text-orange-700", SC: "bg-yellow-100 text-yellow-700",
+    SL: "bg-purple-100 text-purple-700", TOPICAL: "bg-green-100 text-green-700",
+    INHALATION: "bg-cyan-100 text-cyan-700", RECTAL: "bg-gray-100 text-gray-700",
+    NASAL: "bg-pink-100 text-pink-700"
   }
 
   return (
     <div className="space-y-4">
-
-      {/* Header */}
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-gray-700">
-          Medication Administration Record (MAR)
-        </h3>
+        <h3 className="font-semibold text-gray-700">Medication Administration Record (MAR)</h3>
         <button
           onClick={openModal}
           className="flex items-center gap-2 bg-pink-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-pink-700 transition-colors"
@@ -810,11 +1145,8 @@ function MedicationAdmin() {
         </button>
       </div>
 
-      {/* 5 Rights Checklist */}
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-        <p className="text-blue-700 text-sm font-medium mb-3">
-          📋 5 Rights of Medication Administration
-        </p>
+        <p className="text-blue-700 text-sm font-medium mb-3">📋 5 Rights of Medication Administration</p>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
           {["Right Patient","Right Drug","Right Dose","Right Route","Right Time"].map(r => (
             <div key={r} className="bg-white rounded-lg p-2 text-center border border-blue-100">
@@ -825,12 +1157,9 @@ function MedicationAdmin() {
         </div>
       </div>
 
-      {/* Patient Selector */}
       {admissions.length > 0 && (
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">
-            Select Patient to View MAR
-          </label>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">Select Patient to View MAR</label>
           <select
             value={selectedAdm?.id || ""}
             onChange={e => handleAdmissionChange(e.target.value)}
@@ -846,34 +1175,24 @@ function MedicationAdmin() {
         </div>
       )}
 
-      {/* Records List */}
       {loading ? (
         <div className="flex items-center justify-center h-24">
           <RefreshCw className="w-5 h-5 animate-spin text-pink-500" />
         </div>
       ) : records.length > 0 ? (
         <div className="space-y-2">
-          <p className="text-sm font-semibold text-gray-600">
-            Administration Records ({records.length})
-          </p>
+          <p className="text-sm font-semibold text-gray-600">Administration Records ({records.length})</p>
           <div className="max-h-72 overflow-y-auto space-y-2">
             {records.map(r => (
-              <div
-                key={r.id}
-                className="border border-gray-200 rounded-xl p-4 flex items-start justify-between gap-3"
-              >
+              <div key={r.id} className="border border-gray-200 rounded-xl p-4 flex items-start justify-between gap-3">
                 <div className="flex items-start gap-3">
                   <div className="w-9 h-9 bg-pink-100 rounded-lg flex items-center justify-center shrink-0">
                     <Syringe className="w-4 h-4 text-pink-600" />
                   </div>
                   <div>
                     <p className="font-semibold text-gray-800 text-sm">{r.drugName}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      Dose: <span className="font-medium">{r.dose}</span>
-                    </p>
-                    {r.notes && (
-                      <p className="text-xs text-gray-400 mt-0.5">{r.notes}</p>
-                    )}
+                    <p className="text-xs text-gray-500 mt-0.5">Dose: <span className="font-medium">{r.dose}</span></p>
+                    {r.notes && <p className="text-xs text-gray-400 mt-0.5">{r.notes}</p>}
                   </div>
                 </div>
                 <div className="text-right shrink-0">
@@ -883,8 +1202,7 @@ function MedicationAdmin() {
                   <p className="text-xs text-gray-400 mt-1 flex items-center gap-1 justify-end">
                     <Clock className="w-3 h-3" />
                     {new Date(r.administeredAt).toLocaleString("en-NG", {
-                      day: "2-digit", month: "short",
-                      hour: "2-digit", minute: "2-digit"
+                      day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit"
                     })}
                   </p>
                 </div>
@@ -897,39 +1215,26 @@ function MedicationAdmin() {
           <Syringe className="w-12 h-12 mx-auto mb-3 text-gray-200" />
           <p className="font-medium text-sm">No administration records yet</p>
           <p className="text-xs mt-1">
-            {admissions.length === 0
-              ? "No admitted patients found"
-              : "Click 'Record Administration' to add a record"}
+            {admissions.length === 0 ? "No admitted patients found" : "Click 'Record Administration' to add a record"}
           </p>
         </div>
       )}
 
-      {/* ── MODAL ── */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
-
-            {/* Modal Header */}
             <div className="flex items-center justify-between p-5 border-b border-gray-100">
               <div>
                 <h3 className="font-bold text-gray-800">Record Medication Administration</h3>
                 <p className="text-xs text-gray-500 mt-0.5">Confirm all 5 rights before recording</p>
               </div>
-              <button
-                onClick={() => setShowModal(false)}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
+              <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
                 <X className="w-4 h-4 text-gray-500" />
               </button>
             </div>
-
             <form onSubmit={handleSubmit} className="p-5 space-y-4">
-
-              {/* Patient */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Patient <span className="text-red-500">*</span>
-                </label>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Patient <span className="text-red-500">*</span></label>
                 <select
                   value={form.admissionId}
                   onChange={e => setForm(f => ({ ...f, admissionId: e.target.value }))}
@@ -944,52 +1249,33 @@ function MedicationAdmin() {
                   ))}
                 </select>
               </div>
-
-              {/* Drug Name */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Drug Name <span className="text-red-500">*</span>
-                </label>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Drug Name <span className="text-red-500">*</span></label>
                 <input
-                  type="text"
-                  value={form.drugName}
+                  type="text" value={form.drugName}
                   onChange={e => setForm(f => ({ ...f, drugName: e.target.value }))}
-                  placeholder="e.g. Paracetamol 500mg"
-                  required
+                  placeholder="e.g. Paracetamol 500mg" required
                   className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
                 />
               </div>
-
-              {/* Dose */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Dose <span className="text-red-500">*</span>
-                </label>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Dose <span className="text-red-500">*</span></label>
                 <input
-                  type="text"
-                  value={form.dose}
+                  type="text" value={form.dose}
                   onChange={e => setForm(f => ({ ...f, dose: e.target.value }))}
-                  placeholder="e.g. 1 tablet, 500mg, 10ml"
-                  required
+                  placeholder="e.g. 1 tablet, 500mg, 10ml" required
                   className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
                 />
               </div>
-
-              {/* Route */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Route <span className="text-red-500">*</span>
-                </label>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Route <span className="text-red-500">*</span></label>
                 <div className="flex flex-wrap gap-2">
                   {ROUTES.map(r => (
                     <button
-                      key={r}
-                      type="button"
+                      key={r} type="button"
                       onClick={() => setForm(f => ({ ...f, route: r }))}
                       className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                        form.route === r
-                          ? "bg-pink-600 text-white"
-                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        form.route === r ? "bg-pink-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                       }`}
                     >
                       {r}
@@ -997,25 +1283,16 @@ function MedicationAdmin() {
                   ))}
                 </div>
               </div>
-
-              {/* Date/Time */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Date & Time Administered
-                </label>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Date & Time Administered</label>
                 <input
-                  type="datetime-local"
-                  value={form.administeredAt}
+                  type="datetime-local" value={form.administeredAt}
                   onChange={e => setForm(f => ({ ...f, administeredAt: e.target.value }))}
                   className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
                 />
               </div>
-
-              {/* Notes */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Notes <span className="text-gray-400 text-xs">(optional)</span>
-                </label>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Notes <span className="text-gray-400 text-xs">(optional)</span></label>
                 <textarea
                   value={form.notes}
                   onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
@@ -1024,25 +1301,18 @@ function MedicationAdmin() {
                   className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 resize-none"
                 />
               </div>
-
-              {/* Actions */}
               <div className="flex gap-3 pt-1">
                 <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                  type="button" onClick={() => setShowModal(false)}
+                  className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50"
                 >
                   Cancel
                 </button>
                 <button
-                  type="submit"
-                  disabled={submitting}
-                  className="flex-1 py-2.5 bg-pink-600 text-white rounded-xl text-sm font-semibold hover:bg-pink-700 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
+                  type="submit" disabled={submitting}
+                  className="flex-1 py-2.5 bg-pink-600 text-white rounded-xl text-sm font-semibold hover:bg-pink-700 disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  {submitting
-                    ? <><RefreshCw className="w-4 h-4 animate-spin" /> Saving...</>
-                    : <><Save className="w-4 h-4" /> Record</>
-                  }
+                  {submitting ? <><RefreshCw className="w-4 h-4 animate-spin" /> Saving...</> : <><Save className="w-4 h-4" /> Record</>}
                 </button>
               </div>
             </form>
@@ -1068,19 +1338,14 @@ function NursingNotes() {
     try {
       const res        = await api.get("/nursing/queue")
       const payload    = res.data?.data
-      // ✅ FIXED: defensive extraction
       const admissions = extractArray(payload, "admissions", "queue", "visits")
       setVisits(
-        admissions
-          .map(a => ({
-            id:    a.visit?.id,
-            label: `${a.patient?.firstName} ${a.patient?.lastName} — Bed ${a.bed?.bedNumber}`
-          }))
-          .filter(v => v.id)
+        admissions.map(a => ({
+          id: a.visit?.id,
+          label: `${a.patient?.firstName} ${a.patient?.lastName} — Bed ${a.bed?.bedNumber}`
+        })).filter(v => v.id)
       )
-    } catch (e) {
-      console.error("fetchVisits error:", e)
-    }
+    } catch (e) { console.error("fetchVisits error:", e) }
   }
 
   const fetchNotes = async () => {
@@ -1088,16 +1353,11 @@ function NursingNotes() {
       const res  = await api.get(`/nursing/notes/${selectedVisit}`)
       const data = res.data?.data
       setNotes(Array.isArray(data) ? data : Array.isArray(data?.notes) ? data.notes : [])
-    } catch (e) {
-      console.error("fetchNotes error:", e)
-    }
+    } catch (e) { console.error("fetchNotes error:", e) }
   }
 
   const submit = async () => {
-    if (!selectedVisit || !form.content.trim()) {
-      toast.error("Select patient and enter note")
-      return
-    }
+    if (!selectedVisit || !form.content.trim()) { toast.error("Select patient and enter note"); return }
     setSubmitting(true)
     try {
       await api.post("/nursing/notes", { visitId: selectedVisit, ...form })
@@ -1113,12 +1373,9 @@ function NursingNotes() {
 
   const NOTE_TYPES  = ["GENERAL","ASSESSMENT","MEDICATION","PROCEDURE","HANDOVER","INCIDENT","DISCHARGE_PLANNING"]
   const NOTE_COLORS = {
-    GENERAL:            "bg-gray-100 text-gray-700",
-    ASSESSMENT:         "bg-blue-100 text-blue-700",
-    MEDICATION:         "bg-green-100 text-green-700",
-    PROCEDURE:          "bg-purple-100 text-purple-700",
-    HANDOVER:           "bg-orange-100 text-orange-700",
-    INCIDENT:           "bg-red-100 text-red-700",
+    GENERAL: "bg-gray-100 text-gray-700", ASSESSMENT: "bg-blue-100 text-blue-700",
+    MEDICATION: "bg-green-100 text-green-700", PROCEDURE: "bg-purple-100 text-purple-700",
+    HANDOVER: "bg-orange-100 text-orange-700", INCIDENT: "bg-red-100 text-red-700",
     DISCHARGE_PLANNING: "bg-teal-100 text-teal-700"
   }
 
@@ -1143,9 +1400,7 @@ function NursingNotes() {
             onChange={e => setForm(p => ({ ...p, noteType: e.target.value }))}
             className="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
           >
-            {NOTE_TYPES.map(t => (
-              <option key={t} value={t}>{t.replace(/_/g, " ")}</option>
-            ))}
+            {NOTE_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, " ")}</option>)}
           </select>
         </div>
       </div>
@@ -1169,16 +1424,13 @@ function NursingNotes() {
           <div className="flex gap-2">
             {["ROUTINE","URGENT","CRITICAL"].map(p => (
               <button
-                key={p}
-                type="button"
+                key={p} type="button"
                 onClick={() => setForm(prev => ({ ...prev, priority: p }))}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   form.priority === p
-                    ? p === "CRITICAL"
-                      ? "bg-red-600 text-white"
-                      : p === "URGENT"
-                        ? "bg-orange-500 text-white"
-                        : "bg-blue-600 text-white"
+                    ? p === "CRITICAL" ? "bg-red-600 text-white"
+                      : p === "URGENT" ? "bg-orange-500 text-white"
+                      : "bg-blue-600 text-white"
                     : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                 }`}
               >
@@ -1188,8 +1440,7 @@ function NursingNotes() {
           </div>
         </div>
         <button
-          type="button"
-          onClick={submit}
+          type="button" onClick={submit}
           disabled={submitting || !selectedVisit || !form.content.trim()}
           className="ml-auto flex items-center gap-2 bg-pink-600 text-white px-6 py-2.5 rounded-xl font-medium hover:bg-pink-700 disabled:opacity-50 transition-colors"
         >
@@ -1198,7 +1449,6 @@ function NursingNotes() {
         </button>
       </div>
 
-      {/* Previous Notes */}
       {notes.length > 0 && (
         <div>
           <h3 className="font-semibold text-gray-700 mb-3">Previous Notes</h3>
@@ -1207,16 +1457,12 @@ function NursingNotes() {
               <div key={note.id} className="border border-gray-200 rounded-xl p-4">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                      NOTE_COLORS[note.noteType] || "bg-gray-100 text-gray-700"
-                    }`}>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${NOTE_COLORS[note.noteType] || "bg-gray-100 text-gray-700"}`}>
                       {note.noteType?.replace(/_/g, " ")}
                     </span>
                     {note.priority !== "ROUTINE" && (
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                        note.priority === "CRITICAL"
-                          ? "bg-red-100 text-red-700"
-                          : "bg-orange-100 text-orange-700"
+                        note.priority === "CRITICAL" ? "bg-red-100 text-red-700" : "bg-orange-100 text-orange-700"
                       }`}>
                         {note.priority}
                       </span>
@@ -1254,7 +1500,6 @@ function BedManagement() {
     try {
       const res     = await api.get("/nursing/beds")
       const payload = res.data?.data
-      // ✅ FIXED: defensive extraction
       const list    = extractArray(payload, "beds")
       setBeds(list)
     } catch (e) {
@@ -1276,8 +1521,7 @@ function BedManagement() {
 
   const wards    = [...new Set(beds.map(b => b.room?.ward?.name).filter(Boolean))]
   const filtered = filter === "ALL" ? beds : beds.filter(b => b.status === filter)
-
-  const stats = {
+  const stats    = {
     total:       beds.length,
     available:   beds.filter(b => b.status === "AVAILABLE").length,
     occupied:    beds.filter(b => b.status === "OCCUPIED").length,
@@ -1287,7 +1531,6 @@ function BedManagement() {
 
   return (
     <div className="space-y-5">
-      {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
           { label: "Total Beds",  value: stats.total,       color: "gray"   },
@@ -1296,17 +1539,13 @@ function BedManagement() {
           { label: "Reserved",    value: stats.reserved,    color: "yellow" },
           { label: "Maintenance", value: stats.maintenance, color: "red"    }
         ].map(s => (
-          <div
-            key={s.label}
-            className={`bg-${s.color}-50 border border-${s.color}-200 rounded-xl p-3 text-center`}
-          >
+          <div key={s.label} className={`bg-${s.color}-50 border border-${s.color}-200 rounded-xl p-3 text-center`}>
             <p className={`text-2xl font-bold text-${s.color}-700`}>{s.value}</p>
             <p className={`text-xs text-${s.color}-600 font-medium`}>{s.label}</p>
           </div>
         ))}
       </div>
 
-      {/* Occupancy Bar */}
       <div className="bg-white border border-gray-200 rounded-xl p-4">
         <div className="flex items-center justify-between mb-2">
           <p className="text-sm font-semibold text-gray-700">Overall Occupancy</p>
@@ -1317,11 +1556,7 @@ function BedManagement() {
         <div className="w-full bg-gray-200 rounded-full h-3">
           <div
             className="bg-blue-600 h-3 rounded-full transition-all"
-            style={{
-              width: stats.total > 0
-                ? `${(stats.occupied / stats.total) * 100}%`
-                : "0%"
-            }}
+            style={{ width: stats.total > 0 ? `${(stats.occupied / stats.total) * 100}%` : "0%" }}
           />
         </div>
         <div className="flex justify-between text-xs text-gray-400 mt-1">
@@ -1330,32 +1565,22 @@ function BedManagement() {
         </div>
       </div>
 
-      {/* Filter */}
       <div className="flex gap-2 flex-wrap">
         {["ALL","AVAILABLE","OCCUPIED","RESERVED","CLEANING","MAINTENANCE","ISOLATION"].map(f => (
           <button
-            key={f}
-            onClick={() => setFilter(f)}
+            key={f} onClick={() => setFilter(f)}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              filter === f
-                ? "bg-pink-600 text-white"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              filter === f ? "bg-pink-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
             }`}
           >
-            {f} {f === "ALL"
-              ? `(${beds.length})`
-              : `(${beds.filter(b => b.status === f).length})`
-            }
+            {f} {f === "ALL" ? `(${beds.length})` : `(${beds.filter(b => b.status === f).length})`}
           </button>
         ))}
       </div>
 
-      {/* Bed Grid by Ward */}
       {loading ? (
         <div className="grid grid-cols-4 md:grid-cols-8 gap-3">
-          {[...Array(16)].map((_, i) => (
-            <div key={i} className="h-20 bg-gray-100 rounded-xl animate-pulse" />
-          ))}
+          {[...Array(16)].map((_, i) => <div key={i} className="h-20 bg-gray-100 rounded-xl animate-pulse" />)}
         </div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-12">
@@ -1381,14 +1606,11 @@ function BedManagement() {
                     }`}
                   >
                     <BedDouble className="w-6 h-6 mx-auto mb-1" />
-                    <p className="text-xs font-bold">
-                      {bed.bedNumber?.split("-").pop()}
-                    </p>
+                    <p className="text-xs font-bold">{bed.bedNumber?.split("-").pop()}</p>
                     <p className="text-xs font-medium mt-0.5">
                       {bed.status === "OCCUPIED"
                         ? bed.admissions?.[0]?.patient?.firstName?.slice(0, 8) || "Occupied"
-                        : bed.status
-                      }
+                        : bed.status}
                     </p>
                   </div>
                 ))}
@@ -1411,15 +1633,12 @@ function NursingAI({ onClose }) {
   const [thinking, setThinking] = useState(false)
 
   const QUICK = [
-    "Normal vitals ranges",
-    "Pain assessment scale",
-    "IV drip calculation",
-    "Pressure ulcer care",
-    "Handover template"
+    "Normal vitals ranges", "Pain assessment scale",
+    "IV drip calculation", "Pressure ulcer care", "Handover template"
   ]
 
   const RESPONSES = {
-    vital:    "Normal Vital Sign Ranges:\n\n• BP: 90-120 / 60-80 mmHg\n• Heart Rate: 60-100 bpm\n• Temperature: 36.1-37.2°C\n• SpO₂: ≥ 95%\n• RR: 12-20 /min\n• Blood Glucose: 3.9-5.5 (fasting)\n\n🔴 Critical Values (notify doctor immediately):\n• BP > 180/120 or < 80/50\n• HR > 150 or < 40\n• Temp > 40°C or < 35°C\n• SpO₂ < 90%",
+    vital:    "Normal Vital Sign Ranges:\n\n• BP: 90-120 / 60-80 mmHg\n• Heart Rate: 60-100 bpm\n• Temperature: 36.1-37.2°C\n• SpO₂: ≥ 95%\n• RR: 12-20 cpm\n• Blood Glucose: 3.9-5.5 (fasting)\n\n🔴 Critical Values (notify doctor immediately):\n• BP > 180/120 or < 80/50\n• HR > 150 or < 40\n• Temp > 40°C or < 35°C\n• SpO₂ < 90%",
     pain:     "Pain Assessment Scales:\n\n📊 Numerical Rating Scale (NRS):\n0 = No pain\n1-3 = Mild pain\n4-6 = Moderate pain\n7-10 = Severe pain\n\n🎭 FACES Scale (paediatrics/confused):\nUsed when patient cannot use NRS\n\n📋 CPOT (Critical Care Pain):\nFor intubated/non-verbal patients\n\n⚠️ Document: location, character, radiation, duration, aggravating/relieving factors",
     drip:     "IV Drip Rate Calculation:\n\nFormula: Rate (drops/min) = Volume (ml) × Drop factor / Time (min)\n\nCommon drop factors:\n• Macro set: 15 drops/ml\n• Micro set: 60 drops/ml\n\nExample: 1000ml NS over 8 hours\n= 1000 × 15 / 480 = 31 drops/min\n\nFor ml/hr: Volume ÷ Hours\n1000ml ÷ 8h = 125 ml/hr",
     pressure: "Pressure Ulcer Prevention (SSKIN Bundle):\n\nS - Surface: Use appropriate mattress\nS - Skin inspection: Check every shift\nK - Keep moving: Reposition 2-hourly\nI - Incontinence: Keep skin dry\nN - Nutrition: Adequate protein intake\n\nBraden Scale ≤ 18 = High risk\n\nStaging:\n• Stage 1: Non-blanchable redness\n• Stage 2: Partial thickness skin loss\n• Stage 3: Full thickness skin loss\n• Stage 4: Tissue/bone exposed",
@@ -1435,11 +1654,11 @@ function NursingAI({ onClose }) {
     await new Promise(r => setTimeout(r, 700))
     const lower = q.toLowerCase()
     let response = "Thank you for your question. "
-    if      (lower.includes("vital"))                            response = RESPONSES.vital
-    else if (lower.includes("pain"))                             response = RESPONSES.pain
+    if      (lower.includes("vital"))                                           response = RESPONSES.vital
+    else if (lower.includes("pain"))                                            response = RESPONSES.pain
     else if (lower.includes("drip") || lower.includes("iv") || lower.includes("calculation")) response = RESPONSES.drip
-    else if (lower.includes("pressure") || lower.includes("ulcer")) response = RESPONSES.pressure
-    else if (lower.includes("handover") || lower.includes("sbar")) response = RESPONSES.handover
+    else if (lower.includes("pressure") || lower.includes("ulcer"))            response = RESPONSES.pressure
+    else if (lower.includes("handover") || lower.includes("sbar"))             response = RESPONSES.handover
     else response += "Please be more specific. I can help with vitals, pain assessment, IV calculations, wound care, and handover templates."
     setMessages(m => [...m, { role: "assistant", text: response }])
     setThinking(false)
@@ -1477,11 +1696,8 @@ function NursingAI({ onClose }) {
               <div className="bg-white rounded-2xl px-4 py-3 shadow-sm border">
                 <div className="flex gap-1">
                   {[0,1,2].map(i => (
-                    <div
-                      key={i}
-                      className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
-                      style={{ animationDelay: `${i * 0.1}s` }}
-                    />
+                    <div key={i} className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                      style={{ animationDelay: `${i * 0.1}s` }} />
                   ))}
                 </div>
               </div>
@@ -1492,8 +1708,7 @@ function NursingAI({ onClose }) {
         <div className="px-4 py-2 border-t flex gap-2 overflow-x-auto">
           {QUICK.map(s => (
             <button
-              key={s}
-              onClick={() => setInput(s)}
+              key={s} onClick={() => setInput(s)}
               className="flex-shrink-0 bg-pink-50 text-pink-700 text-xs px-3 py-1.5 rounded-full hover:bg-pink-100 whitespace-nowrap"
             >
               {s}
