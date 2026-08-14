@@ -3,10 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
-  
 }
 
 model User {
@@ -21,6 +20,7 @@ model User {
   departmentId        String?
   status              UserStatus          @default(ACTIVE)
   avatar              String?
+  isNurseInCharge     Boolean             @default(false)
   lastLogin           DateTime?
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
@@ -36,6 +36,7 @@ model User {
   refreshTokens       RefreshToken[]
   surgeries           Surgery[]           @relation("SurgeonSurgeries")
   department          Department?         @relation(fields: [departmentId], references: [id])
+  nurseShifts         NurseShift[]        @relation("NurseShifts")
 
   @@map("users")
 }
@@ -241,6 +242,7 @@ model VitalSign {
   painScore              Int?
   recordedById           String?
   recordedAt             DateTime @default(now())
+  notes                  String?
   visit                  Visit    @relation(fields: [visitId], references: [id])
 
   @@map("vital_signs")
@@ -359,6 +361,7 @@ model Admission {
   ward                      Ward                       @relation(fields: [wardId], references: [id])
   bedCharges                BedCharge[]
   medicationAdministrations MedicationAdministration[]
+  nurseAssignments          NurseAssignment[]
 
   @@map("admissions")
 }
@@ -373,6 +376,39 @@ model BedCharge {
   admission   Admission @relation(fields: [admissionId], references: [id])
 
   @@map("bed_charges")
+}
+
+model NurseShift {
+  id           String            @id @default(uuid())
+  nurseId      String
+  shiftType    ShiftType
+  date         DateTime          @default(now())
+  clockedInAt  DateTime          @default(now())
+  clockedOutAt DateTime?
+  ward         String?
+  status       ShiftStatus       @default(ACTIVE)
+  notes        String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  nurse        User              @relation("NurseShifts", fields: [nurseId], references: [id])
+  assignments  NurseAssignment[]
+
+  @@map("nurse_shifts")
+}
+
+model NurseAssignment {
+  id           String     @id @default(uuid())
+  shiftId      String
+  nurseId      String
+  admissionId  String
+  assignedById String
+  assignedAt   DateTime   @default(now())
+  notes        String?
+  isActive     Boolean    @default(true)
+  shift        NurseShift @relation(fields: [shiftId], references: [id])
+  admission    Admission  @relation(fields: [admissionId], references: [id])
+
+  @@map("nurse_assignments")
 }
 
 model LabTest {
@@ -785,9 +821,6 @@ model NewbornRecord {
   @@map("newborn_records")
 }
 
-
-// ── Facility Management ────────────────────────────────────────────────────
-
 model FacilityAsset {
   id             String   @id @default(cuid())
   assetCode      String   @unique
@@ -807,7 +840,6 @@ model FacilityAsset {
   updatedById    String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-
   maintenanceRequests MaintenanceRequest[]
 
   @@map("facility_assets")
@@ -831,8 +863,7 @@ model MaintenanceRequest {
   updatedById   String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-
-  asset FacilityAsset? @relation(fields: [assetId], references: [id])
+  asset         FacilityAsset? @relation(fields: [assetId], references: [id])
 
   @@map("maintenance_requests")
 }
@@ -1273,6 +1304,18 @@ enum StockMovementType {
   TRANSFER
   EXPIRED
   DAMAGED
+}
+
+enum ShiftType {
+  MORNING
+  EVENING
+  NIGHT
+}
+
+enum ShiftStatus {
+  ACTIVE
+  COMPLETED
+  ABANDONED
 }
 
 enum Role {
