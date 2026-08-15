@@ -65,21 +65,16 @@ app.get('/api/health', (req, res) => {
 })
 
 // ─── Prisma ───────────────────────────────────────────────────────────────────
-let prisma = null
-try {
-  const { PrismaClient } = require('@prisma/client')
-  prisma = new PrismaClient({
-    log: ['error', 'warn'],
-    datasources: {
-      db: { url: process.env.DATABASE_URL }
-    }
-  })
-  global.prisma = prisma
-  console.log('✅ Prisma initialized')
-} catch (err) {
-  console.warn('⚠️  Prisma error: ' + err.message)
-}
-
+// ─── Prisma ───────────────────────────────────────────────────────────────────
+const { PrismaClient } = require('@prisma/client')
+const prisma = new PrismaClient({
+  log: ['error', 'warn'],
+  datasources: {
+    db: { url: process.env.DATABASE_URL }
+  }
+})
+global.prisma = prisma
+console.log('✅ Prisma initialized')
 // ─── Auth Middleware ──────────────────────────────────────────────────────────
 const authMiddleware = (() => {
   try { return require('./middleware/auth.middleware') }
