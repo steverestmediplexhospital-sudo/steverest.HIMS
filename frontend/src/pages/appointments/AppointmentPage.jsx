@@ -1,7 +1,7 @@
 // frontend/src/pages/AppointmentPage.jsx
 import { useState, useEffect } from "react"
-import useAuthStore from "../store/authStore"
-import api from "../services/api"
+import useAuthStore from "../../store/authStore"
+import api from  "../../services/api"
 import { toast } from "react-hot-toast"
 import {
   Calendar, Clock, User, Plus, RefreshCw, X, Save,
