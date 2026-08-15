@@ -5,7 +5,7 @@ import {
   Settings, Users, Building2, Shield, Plus, Search,
   Edit3, X, Save, CheckCircle,
   Eye, EyeOff, RefreshCw, UserCheck, UserX,
-  Activity, Server, Clock
+  Activity, Server, Clock, Crown
 } from "lucide-react"
 
 const TABS = [
@@ -23,6 +23,9 @@ const ROLES = [
   "PHARMACIST","INVENTORY_OFFICER","FACILITY_OFFICER","ACCOUNTANT",
   "CASHIER","MORTUARY_OFFICER"
 ]
+
+// Roles that can be Nurse In Charge
+const NURSING_ROLES = ["NURSE", "MIDWIFE", "THEATRE_NURSE"]
 
 const ROLE_COLOR = {
   SUPER_ADMIN:             "bg-red-100 text-red-700",
@@ -61,7 +64,6 @@ export default function AdminPage() {
         api.get("/admin/users"),
         api.get("/admin/departments")
       ])
-      // ✅ FIX: correctly extract arrays from response
       const users = uRes.status === "fulfilled"
         ? uRes.value.data.data?.users ||
           uRes.value.data.data?.data  ||
@@ -151,7 +153,8 @@ function UserManagement({ onRefresh }) {
   const EMPTY = {
     firstName: "", lastName: "", email: "", phone: "",
     role: "NURSE", departmentId: "", employeeId: "",
-    password: "", specialization: "", qualification: ""
+    password: "", specialization: "", qualification: "",
+    isNurseInCharge: false
   }
   const [form, setForm] = useState(EMPTY)
 
@@ -161,7 +164,6 @@ function UserManagement({ onRefresh }) {
     setLoading(true)
     try {
       const res = await api.get("/admin/users")
-      // ✅ FIX: correctly extract users array
       const list =
         res.data.data?.users ||
         res.data.data?.data  ||
@@ -177,7 +179,6 @@ function UserManagement({ onRefresh }) {
   const fetchDepts = async () => {
     try {
       const res = await api.get("/admin/departments")
-      // ✅ FIX: correctly extract departments array
       const list =
         res.data.data?.departments ||
         res.data.data?.data        ||
@@ -195,15 +196,16 @@ function UserManagement({ onRefresh }) {
   const openEdit = (user) => {
     setEditUser(user)
     setForm({
-      firstName:      user.firstName      || "",
-      lastName:       user.lastName       || "",
-      email:          user.email          || "",
-      phone:          user.phone          || "",
-      role:           user.role           || "NURSE",
-      departmentId:   user.department?.id || "",
-      employeeId:     user.employeeId     || "",
-      specialization: user.specialization || "",
-      qualification:  user.qualification  || "",
+      firstName:       user.firstName       || "",
+      lastName:        user.lastName        || "",
+      email:           user.email           || "",
+      phone:           user.phone           || "",
+      role:            user.role            || "NURSE",
+      departmentId:    user.department?.id  || "",
+      employeeId:      user.employeeId      || "",
+      specialization:  user.specialization  || "",
+      qualification:   user.qualification   || "",
+      isNurseInCharge: user.isNurseInCharge || false,
       password: ""
     })
     setShowForm(true)
@@ -227,15 +229,18 @@ function UserManagement({ onRefresh }) {
     }
     setSubmitting(true)
     try {
+      const payload = { ...form }
+      if (!payload.departmentId) payload.departmentId = null
+      // Only send isNurseInCharge for nursing roles
+      if (!NURSING_ROLES.includes(payload.role)) {
+        payload.isNurseInCharge = false
+      }
+
       if (editUser) {
-        const payload = { ...form }
         if (!payload.password) delete payload.password
-        if (!payload.departmentId) payload.departmentId = null
         await api.put(`/admin/users/${editUser.id}`, payload)
         toast.success("User updated successfully!")
       } else {
-        const payload = { ...form }
-        if (!payload.departmentId) payload.departmentId = null
         await api.post("/admin/users", payload)
         toast.success("User created successfully!")
       }
@@ -259,6 +264,17 @@ function UserManagement({ onRefresh }) {
     }
   }
 
+  const toggleNIC = async (user) => {
+    try {
+      const newVal = !user.isNurseInCharge
+      await api.patch(`/nursing/staff/${user.id}/set-nic`, { isNurseInCharge: newVal })
+      toast.success(newVal ? `${user.firstName} set as Nurse In Charge` : `NIC removed from ${user.firstName}`)
+      fetchUsers()
+    } catch (e) {
+      toast.error(e.response?.data?.message || "Failed to update NIC status")
+    }
+  }
+
   const filtered = users.filter(u =>
     (filterRole === "ALL" || u.role === filterRole) &&
     (search === "" || `${u.firstName} ${u.lastName} ${u.email} ${u.employeeId}`
@@ -266,6 +282,7 @@ function UserManagement({ onRefresh }) {
   )
 
   const INPUT = "w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-500"
+  const isNursingRole = NURSING_ROLES.includes(form.role)
 
   return (
     <div className="space-y-4">
@@ -340,9 +357,16 @@ function UserManagement({ onRefresh }) {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <p className="text-sm font-semibold text-gray-800">
-                      {user.firstName} {user.lastName}
-                    </p>
+                    <div className="flex items-center gap-1">
+                      <p className="text-sm font-semibold text-gray-800">
+                        {user.firstName} {user.lastName}
+                      </p>
+                      {user.isNurseInCharge && (
+                        <span title="Nurse In Charge">
+                          <Crown className="w-3.5 h-3.5 text-yellow-500" />
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-gray-400">{user.email}</p>
                     <p className="text-xs text-gray-400">{user.phone}</p>
                   </td>
@@ -350,6 +374,11 @@ function UserManagement({ onRefresh }) {
                     <span className={`text-xs px-2 py-1 rounded-full font-medium ${ROLE_COLOR[user.role] || "bg-gray-100 text-gray-600"}`}>
                       {user.role?.replace(/_/g," ")}
                     </span>
+                    {user.isNurseInCharge && (
+                      <p className="text-xs text-yellow-600 font-medium mt-0.5 flex items-center gap-1">
+                        <Crown className="w-3 h-3" /> NIC
+                      </p>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <p className="text-xs text-gray-600">{user.department?.name || "—"}</p>
@@ -382,6 +411,18 @@ function UserManagement({ onRefresh }) {
                           ? <UserX className="w-4 h-4" />
                           : <UserCheck className="w-4 h-4" />}
                       </button>
+                      {/* NIC Quick Toggle — only for nursing roles */}
+                      {NURSING_ROLES.includes(user.role) && (
+                        <button onClick={() => toggleNIC(user)}
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            user.isNurseInCharge
+                              ? "text-yellow-500 hover:text-yellow-700 hover:bg-yellow-50"
+                              : "text-gray-300 hover:text-yellow-500 hover:bg-yellow-50"
+                          }`}
+                          title={user.isNurseInCharge ? "Remove NIC" : "Set as Nurse In Charge"}>
+                          <Crown className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -443,7 +484,7 @@ function UserManagement({ onRefresh }) {
                   </label>
                   <input value={form.phone}
                     onChange={e => set("phone", e.target.value)}
-                    placeholder="07XXXXXXXX" className={INPUT} />
+                    placeholder="+234 XXXX XXX XXX" className={INPUT} />
                 </div>
               </div>
 
@@ -454,7 +495,13 @@ function UserManagement({ onRefresh }) {
                     Role <span className="text-red-500">*</span>
                   </label>
                   <select value={form.role}
-                    onChange={e => set("role", e.target.value)}
+                    onChange={e => {
+                      set("role", e.target.value)
+                      // Reset NIC if switching away from nursing role
+                      if (!NURSING_ROLES.includes(e.target.value)) {
+                        set("isNurseInCharge", false)
+                      }
+                    }}
                     className={INPUT}>
                     {ROLES.map(r => (
                       <option key={r} value={r}>{r.replace(/_/g," ")}</option>
@@ -470,6 +517,39 @@ function UserManagement({ onRefresh }) {
                     placeholder="EMP-0001" className={INPUT} />
                 </div>
               </div>
+
+              {/* ── Nurse In Charge Toggle — only shows for nursing roles ── */}
+              {isNursingRole && (
+                <div className="border border-yellow-200 bg-yellow-50 rounded-xl p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Crown className="w-4 h-4 text-yellow-500" />
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800">Nurse In Charge (NIC)</p>
+                        <p className="text-xs text-gray-500">
+                          NIC can assign nurses to patients and manage shift rosters
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => set("isNurseInCharge", !form.isNurseInCharge)}
+                      className={`w-12 h-6 rounded-full transition-colors relative flex-shrink-0 ${
+                        form.isNurseInCharge ? "bg-yellow-500" : "bg-gray-300"
+                      }`}>
+                      <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-all shadow ${
+                        form.isNurseInCharge ? "left-6" : "left-0.5"
+                      }`} />
+                    </button>
+                  </div>
+                  {form.isNurseInCharge && (
+                    <p className="text-xs text-yellow-700 mt-2 flex items-center gap-1">
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      This nurse will have Nurse In Charge privileges
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Department & Specialization */}
               <div className="grid grid-cols-2 gap-4">
@@ -585,7 +665,6 @@ function DepartmentManagement() {
     setLoading(true)
     try {
       const res  = await api.get("/admin/departments")
-      // ✅ FIX: correctly extract departments
       const list =
         res.data.data?.departments ||
         res.data.data?.data        ||
@@ -832,11 +911,11 @@ function RolesOverview() {
 function SystemSettings() {
   const [settings, setSettings] = useState({
     hospitalName:          "St. Everest Mediplex",
-    hospitalPhone:         "+254 700 000 000",
+    hospitalPhone:         "+234 700 000 0000",
     hospitalEmail:         "info@steverestmediplex.com",
-    hospitalAddress:       "Nairobi, Kenya",
-    currency:              "KES",
-    timezone:              "Africa/Nairobi",
+    hospitalAddress:       "Lagos, Nigeria",
+    currency:              "NGN",
+    timezone:              "Africa/Lagos",
     dateFormat:            "DD/MM/YYYY",
     appointmentDuration:   "30",
     maxAppointmentsPerDay: "20",
@@ -899,12 +978,12 @@ function SystemSettings() {
             <select value={settings.currency}
               onChange={e => setSettings(p => ({...p, currency: e.target.value}))}
               className={INPUT}>
-              <option value="KES">KES - Kenyan Shilling</option>
+              <option value="NGN">NGN - Nigerian Naira (₦)</option>
               <option value="USD">USD - US Dollar</option>
+              <option value="GHS">GHS - Ghanaian Cedi</option>
+              <option value="KES">KES - Kenyan Shilling</option>
               <option value="UGX">UGX - Ugandan Shilling</option>
               <option value="TZS">TZS - Tanzanian Shilling</option>
-              <option value="GHS">GHS - Ghanaian Cedi</option>
-              <option value="NGN">NGN - Nigerian Naira</option>
             </select>
           </div>
           <div>
@@ -912,8 +991,8 @@ function SystemSettings() {
             <select value={settings.timezone}
               onChange={e => setSettings(p => ({...p, timezone: e.target.value}))}
               className={INPUT}>
+              <option value="Africa/Lagos">Africa/Lagos (WAT — Nigeria)</option>
               <option value="Africa/Nairobi">Africa/Nairobi (EAT)</option>
-              <option value="Africa/Lagos">Africa/Lagos (WAT)</option>
               <option value="Africa/Accra">Africa/Accra (GMT)</option>
               <option value="Africa/Johannesburg">Africa/Johannesburg (SAST)</option>
             </select>
@@ -985,7 +1064,6 @@ function AuditLogs() {
   const fetchLogs = async () => {
     try {
       const res  = await api.get("/admin/audit-logs")
-      // ✅ FIX: correctly extract logs
       const list =
         res.data.data?.logs  ||
         res.data.data?.data  ||
