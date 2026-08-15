@@ -124,11 +124,11 @@ const createUser = async (req, res) => {
         role,
         passwordHash,
         employeeId:      empId,
-        specialization:  specialization || null,
-        qualification:   qualification  || null,
         status:          'ACTIVE',
         isNurseInCharge: NURSING_ROLES.includes(role) ? Boolean(isNurseInCharge) : false,
-        ...(departmentId ? { department: { connect: { id: departmentId } } } : {})
+        ...(specialization ? { specialization } : {}),
+        ...(qualification  ? { qualification  } : {}),
+        ...(departmentId   ? { department: { connect: { id: departmentId } } } : {})
       },
       select: {
         id:              true,
@@ -199,8 +199,14 @@ const updateUser = async (req, res) => {
         ...(phone     && { phone     }),
         ...(role      && { role      }),
         ...(status    && { status    }),
-        ...(specialization !== undefined && { specialization: specialization || null }),
-        ...(qualification  !== undefined && { qualification:  qualification  || null }),
+        ...(specialization !== undefined && specialization
+          ? { specialization }
+          : specialization === '' ? { specialization: undefined } : {}
+        ),
+        ...(qualification !== undefined && qualification
+          ? { qualification }
+          : qualification === '' ? { qualification: undefined } : {}
+        ),
         ...(isNurseInCharge !== undefined && {
           isNurseInCharge: NURSING_ROLES.includes(effectiveRole)
             ? Boolean(isNurseInCharge)
