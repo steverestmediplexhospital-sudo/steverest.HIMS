@@ -54,10 +54,10 @@ export default function ReceptionPage() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: "Today Visits", value: stats.today },
-              { label: "Waiting",      value: stats.waiting },
+              { label: "Today Visits",   value: stats.today },
+              { label: "Waiting",        value: stats.waiting },
               { label: "Total Patients", value: stats.total },
-              { label: "Appointments", value: stats.appointments }
+              { label: "Appointments",   value: stats.appointments }
             ].map(s => (
               <div key={s.label} className="bg-white/20 rounded-xl px-4 py-2 text-center">
                 <p className="text-xl font-bold">{s.value}</p>
@@ -102,10 +102,10 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
   const [submitting, setSubmitting] = useState(false)
   const [form, setForm] = useState({
     firstName: "", lastName: "", middleName: "", dateOfBirth: "",
-    gender: "", bloodGroup: "", maritalStatus: "", nationality: "Kenyan",
+    gender: "", bloodGroup: "", maritalStatus: "", nationality: "Nigerian",
     nationalId: "", passportNumber: "", religion: "",
     phone: "", altPhone: "", email: "",
-    address: "", city: "", county: "", postalCode: "",
+    address: "", city: "", state: "", postalCode: "",
     emergencyContactName: "", emergencyContactRelation: "",
     emergencyContactPhone: "", emergencyContactAddress: "",
     patientType: "OUTPATIENT", allergies: "", chronicConditions: "",
@@ -134,14 +134,11 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
       let patient
       if (editPatient?.id) {
         const res = await api.put(`/patients/${editPatient.id}`, form)
-        // ✅ FIX: correctly extract patient from response
         patient = res.data.data?.patient || res.data.data
         toast.success("Patient record updated!")
       } else {
         const res = await api.post("/patients", form)
-        // ✅ FIX: correctly extract patient from response
         patient = res.data.data?.patient || res.data.data
-        // Create visit if chief complaint provided
         if (form.chiefComplaint && patient?.id) {
           await api.post("/visits", {
             patientId: patient.id,
@@ -149,7 +146,6 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
             chiefComplaint: form.chiefComplaint
           })
         }
-        // ✅ FIX: use mrn not patientNumber
         toast.success(`Patient registered! MRN: ${patient?.mrn || "Success"}`)
       }
       onSuccess(patient)
@@ -188,7 +184,7 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
         ))}
       </div>
 
-      {/* Step 1: Personal Information */}
+      {/* Step 1 */}
       {step === 1 && (
         <div className="space-y-4">
           <h3 className="font-semibold text-gray-800 flex items-center gap-2">
@@ -245,8 +241,8 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
             </div>
             <div><label className={LABEL}>Nationality</label>
               <input value={form.nationality} onChange={e => set("nationality", e.target.value)} className={INPUT} /></div>
-            <div><label className={LABEL}>National ID / Birth Cert</label>
-              <input value={form.nationalId} onChange={e => set("nationalId", e.target.value)} placeholder="ID number" className={INPUT} /></div>
+            <div><label className={LABEL}>National ID / NIN</label>
+              <input value={form.nationalId} onChange={e => set("nationalId", e.target.value)} placeholder="NIN / ID number" className={INPUT} /></div>
             <div><label className={LABEL}>Religion</label>
               <input value={form.religion} onChange={e => set("religion", e.target.value)} placeholder="Optional" className={INPUT} /></div>
           </div>
@@ -266,7 +262,7 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
         </div>
       )}
 
-      {/* Step 2: Contact Details */}
+      {/* Step 2 */}
       {step === 2 && (
         <div className="space-y-4">
           <h3 className="font-semibold text-gray-800 flex items-center gap-2">
@@ -274,7 +270,7 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div><label className={LABEL}>Primary Phone {REQ}</label>
-              <input value={form.phone} onChange={e => set("phone", e.target.value)} placeholder="07XXXXXXXX" className={INPUT} /></div>
+              <input value={form.phone} onChange={e => set("phone", e.target.value)} placeholder="080XXXXXXXX" className={INPUT} /></div>
             <div><label className={LABEL}>Alternative Phone</label>
               <input value={form.altPhone} onChange={e => set("altPhone", e.target.value)} placeholder="Optional" className={INPUT} /></div>
             <div><label className={LABEL}>Email Address</label>
@@ -286,9 +282,19 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
                 placeholder="Street, Estate, Area..." rows={2} className={INPUT} /></div>
             <div className="space-y-3">
               <div><label className={LABEL}>City/Town</label>
-                <input value={form.city} onChange={e => set("city", e.target.value)} placeholder="e.g. Nairobi" className={INPUT} /></div>
-              <div><label className={LABEL}>County</label>
-                <input value={form.county} onChange={e => set("county", e.target.value)} placeholder="e.g. Nairobi" className={INPUT} /></div>
+                <input value={form.city} onChange={e => set("city", e.target.value)} placeholder="e.g. Lagos" className={INPUT} /></div>
+              <div><label className={LABEL}>State</label>
+                <select value={form.state} onChange={e => set("state", e.target.value)} className={INPUT}>
+                  <option value="">Select state...</option>
+                  {["Abia","Adamawa","Akwa Ibom","Anambra","Bauchi","Bayelsa","Benue","Borno",
+                    "Cross River","Delta","Ebonyi","Edo","Ekiti","Enugu","FCT","Gombe","Imo",
+                    "Jigawa","Kaduna","Kano","Katsina","Kebbi","Kogi","Kwara","Lagos","Nasarawa",
+                    "Niger","Ogun","Ondo","Osun","Oyo","Plateau","Rivers","Sokoto","Taraba",
+                    "Yobe","Zamfara"].map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
           <div className="border-t border-gray-100 pt-4">
@@ -311,7 +317,7 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
               </div>
               <div><label className={LABEL}>Phone {REQ}</label>
                 <input value={form.emergencyContactPhone} onChange={e => set("emergencyContactPhone", e.target.value)}
-                  placeholder="07XXXXXXXX" className={INPUT} /></div>
+                  placeholder="080XXXXXXXX" className={INPUT} /></div>
               <div><label className={LABEL}>Address</label>
                 <input value={form.emergencyContactAddress} onChange={e => set("emergencyContactAddress", e.target.value)}
                   placeholder="Optional" className={INPUT} /></div>
@@ -320,7 +326,7 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
         </div>
       )}
 
-      {/* Step 3: Medical History */}
+      {/* Step 3 */}
       {step === 3 && (
         <div className="space-y-4">
           <h3 className="font-semibold text-gray-800 flex items-center gap-2">
@@ -370,7 +376,7 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
         </div>
       )}
 
-      {/* Step 4: Insurance & Visit */}
+      {/* Step 4 */}
       {step === 4 && (
         <div className="space-y-4">
           <h3 className="font-semibold text-gray-800 flex items-center gap-2">
@@ -383,8 +389,9 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
                 <label className={LABEL}>Insurance Provider</label>
                 <select value={form.insuranceProvider} onChange={e => set("insuranceProvider", e.target.value)} className={INPUT}>
                   <option value="">Self Pay / Cash</option>
-                  {["NHIF","AAR Healthcare","Jubilee Insurance","Resolution Health","CIC Insurance",
-                    "Madison Insurance","GA Insurance","First Assurance","APA Insurance","Sanlam"].map(p => (
+                  {["NHIS","Hygeia HMO","Reliance HMO","AXA Mansard","Leadway Health",
+                    "Avon HMO","Total Health Trust","Clearline HMO","Redcare HMO",
+                    "CompanyMed","Defence HMO","AIICO Multishield"].map(p => (
                     <option key={p} value={p}>{p}</option>
                   ))}
                 </select>
@@ -415,7 +422,7 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
               </div>
             </div>
           </div>
-          {/* Summary Preview */}
+          {/* Summary */}
           <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
             <h4 className="font-medium text-gray-700 mb-3">Registration Summary</h4>
             <div className="grid grid-cols-2 gap-2 text-sm">
@@ -485,7 +492,6 @@ function PatientSearch({ navigate }) {
     setLoading(true)
     try {
       const res = await api.get(`/patients?search=${encodeURIComponent(search)}&limit=20`)
-      // ✅ FIX: correctly extract patients array from response
       setResults(
         res.data.data?.patients ||
         res.data.data?.data     ||
@@ -557,7 +563,6 @@ function PatientSearch({ navigate }) {
                       {patient.firstName} {patient.lastName}
                     </p>
                     <div className="flex items-center gap-2 text-xs text-gray-400 flex-wrap">
-                      {/* ✅ FIX: use mrn not patientNumber */}
                       <span className="font-medium text-teal-600">{patient.mrn}</span>
                       <span>•</span>
                       <span>{patient.gender}</span>
@@ -681,7 +686,6 @@ function OPDQueue({ navigate }) {
   const fetchQueue = async () => {
     try {
       const res = await api.get(`/visits?date=${new Date().toISOString().split("T")[0]}`)
-      // ✅ FIX: correctly extract visits array
       setVisits(
         res.data.data?.visits ||
         res.data.data?.data   ||
@@ -692,13 +696,13 @@ function OPDQueue({ navigate }) {
   }
 
   const STATUS_LABEL = {
-    WAITING:           { label: "Waiting",         color: "bg-gray-100 text-gray-600"    },
-    TRIAGED:           { label: "Triaged",          color: "bg-blue-100 text-blue-700"    },
-    VITALS_DONE:       { label: "Vitals Done",      color: "bg-purple-100 text-purple-700"},
-    IN_CONSULTATION:   { label: "In Consultation",  color: "bg-yellow-100 text-yellow-700"},
-    AWAITING_LAB:      { label: "Awaiting Lab",     color: "bg-orange-100 text-orange-700"},
-    CONSULTATION_DONE: { label: "Consult Done",     color: "bg-green-100 text-green-700"  },
-    COMPLETED:         { label: "Completed",        color: "bg-teal-100 text-teal-700"    }
+    WAITING:           { label: "Waiting",         color: "bg-gray-100 text-gray-600"     },
+    TRIAGED:           { label: "Triaged",          color: "bg-blue-100 text-blue-700"     },
+    VITALS_DONE:       { label: "Vitals Done",      color: "bg-purple-100 text-purple-700" },
+    IN_CONSULTATION:   { label: "In Consultation",  color: "bg-yellow-100 text-yellow-700" },
+    AWAITING_LAB:      { label: "Awaiting Lab",     color: "bg-orange-100 text-orange-700" },
+    CONSULTATION_DONE: { label: "Consult Done",     color: "bg-green-100 text-green-700"   },
+    COMPLETED:         { label: "Completed",        color: "bg-teal-100 text-teal-700"     }
   }
 
   const getWait = (t) => {
@@ -738,7 +742,6 @@ function OPDQueue({ navigate }) {
                   {visit.patient?.firstName} {visit.patient?.lastName}
                 </p>
                 <p className="text-xs text-gray-400">
-                  {/* ✅ FIX: use mrn not patientNumber */}
                   {visit.patient?.mrn} • {visit.visitType} • {visit.chiefComplaint || "General"}
                 </p>
               </div>
@@ -764,12 +767,13 @@ function AppointmentsTab() {
   const [loading, setLoading]           = useState(true)
   const [showForm, setShowForm]         = useState(false)
   const [form, setForm] = useState({
-    patientId: "", doctorId: "", scheduledAt: "",
-    reason: "", appointmentType: "OPD"
+    patientId: "", doctorId: "",
+    appointmentDate: "", appointmentTime: "",
+    reason: "", type: "OPD"
   })
-  const [patients,    setPatients]    = useState([])
-  const [doctors,     setDoctors]     = useState([])
-  const [submitting,  setSubmitting]  = useState(false)
+  const [patients,      setPatients]      = useState([])
+  const [doctors,       setDoctors]       = useState([])
+  const [submitting,    setSubmitting]    = useState(false)
   const [patientSearch, setPatientSearch] = useState("")
 
   useEffect(() => { fetchAppointments(); fetchDoctors() }, [])
@@ -788,22 +792,25 @@ function AppointmentsTab() {
 
   const fetchDoctors = async () => {
     try {
-      const res = await api.get("/admin/users?role=DOCTOR")
-      setDoctors(
-        res.data.data?.users ||
-        res.data.data?.data  ||
-        res.data.data        ||
-        []
-      )
+      const [d1, d2] = await Promise.allSettled([
+        api.get("/admin/users?role=DOCTOR"),
+        api.get("/admin/users?role=SURGEON")
+      ])
+      const docs  = d1.status === "fulfilled"
+        ? (d1.value.data.data?.users || d1.value.data.data || []) : []
+      const surgs = d2.status === "fulfilled"
+        ? (d2.value.data.data?.users || d2.value.data.data || []) : []
+      setDoctors([...docs, ...surgs])
     } catch (e) {}
   }
 
   const searchPatients = async (q) => {
     setPatientSearch(q)
+    // Clear selected patient if user is typing again
+    if (form.patientId) setForm(p => ({ ...p, patientId: "" }))
     if (q.length < 2) { setPatients([]); return }
     try {
-      const res = await api.get(`/patients?search=${q}&limit=10`)
-      // ✅ FIX: correctly extract patients array
+      const res = await api.get(`/patients?search=${encodeURIComponent(q)}&limit=10`)
       setPatients(
         res.data.data?.patients ||
         res.data.data?.data     ||
@@ -813,16 +820,42 @@ function AppointmentsTab() {
     } catch (e) {}
   }
 
+  const resetForm = () => {
+    setForm({ patientId: "", doctorId: "", appointmentDate: "", appointmentTime: "", reason: "", type: "OPD" })
+    setPatientSearch("")
+    setPatients([])
+  }
+
   const submit = async () => {
-    if (!form.patientId || !form.doctorId || !form.scheduledAt) {
-      toast.error("Fill all required fields")
+    if (!form.patientId) {
+      toast.error("Please search and select a patient")
+      return
+    }
+    if (!form.doctorId) {
+      toast.error("Please select a doctor")
+      return
+    }
+    if (!form.appointmentDate) {
+      toast.error("Please select a date")
+      return
+    }
+    if (!form.appointmentTime) {
+      toast.error("Please select a time")
       return
     }
     setSubmitting(true)
     try {
-      await api.post("/appointments", form)
-      toast.success("Appointment booked!")
+      await api.post("/appointments", {
+        patientId:       form.patientId,
+        doctorId:        form.doctorId,
+        appointmentDate: form.appointmentDate,
+        appointmentTime: form.appointmentTime,
+        reason:          form.reason,
+        type:            form.type,
+      })
+      toast.success("Appointment booked successfully!")
       setShowForm(false)
+      resetForm()
       fetchAppointments()
     } catch (e) {
       toast.error(e.response?.data?.message || "Failed to book appointment")
@@ -830,13 +863,16 @@ function AppointmentsTab() {
   }
 
   const STATUS_COLOR = {
-    SCHEDULED:  "bg-blue-100 text-blue-700",
-    CONFIRMED:  "bg-green-100 text-green-700",
-    CHECKED_IN: "bg-purple-100 text-purple-700",
-    COMPLETED:  "bg-teal-100 text-teal-700",
-    CANCELLED:  "bg-red-100 text-red-700",
-    NO_SHOW:    "bg-gray-100 text-gray-600"
+    SCHEDULED:   "bg-blue-100 text-blue-700",
+    CONFIRMED:   "bg-green-100 text-green-700",
+    CHECKED_IN:  "bg-purple-100 text-purple-700",
+    IN_PROGRESS: "bg-yellow-100 text-yellow-700",
+    COMPLETED:   "bg-teal-100 text-teal-700",
+    CANCELLED:   "bg-red-100 text-red-700",
+    NO_SHOW:     "bg-gray-100 text-gray-600"
   }
+
+  const INPUT = "w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
 
   return (
     <div className="space-y-4">
@@ -863,97 +899,176 @@ function AppointmentsTab() {
             <div className="text-center flex-shrink-0 bg-teal-50 rounded-xl p-2 w-16">
               <p className="text-xs text-gray-500">Time</p>
               <p className="text-sm font-bold text-teal-700">
-                {new Date(appt.scheduledAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}
+                {appt.appointmentTime ||
+                  new Date(appt.appointmentDate).toLocaleTimeString([],
+                    { hour: "2-digit", minute: "2-digit" })}
               </p>
             </div>
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-gray-800">
                 {appt.patient?.firstName} {appt.patient?.lastName}
+                {appt.patient?.fullName}
               </p>
               <p className="text-xs text-gray-400">
-                Dr. {appt.doctor?.firstName} {appt.doctor?.lastName} • {appt.reason || appt.appointmentType}
+                Dr. {appt.doctor?.firstName} {appt.doctor?.lastName}
+                {appt.doctor?.name} • {appt.reason || appt.type}
               </p>
             </div>
-            <span className={`text-xs px-2 py-1 rounded-full font-medium ${STATUS_COLOR[appt.status] || "bg-gray-100 text-gray-600"}`}>
+            <span className={`text-xs px-2 py-1 rounded-full font-medium
+              ${STATUS_COLOR[appt.status] || "bg-gray-100 text-gray-600"}`}>
               {appt.status}
             </span>
           </div>
         ))
       )}
 
-      {/* Book Appointment Modal */}
+      {/* ── Book Appointment Modal ── */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-gray-800">Book Appointment</h3>
-              <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-bold text-gray-800 text-lg">Book Appointment</h3>
+              <button onClick={() => { setShowForm(false); resetForm() }}
+                className="text-gray-400 hover:text-gray-600 p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
+
             <div className="space-y-4">
+
+              {/* Patient Search */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Search Patient <span className="text-red-500">*</span>
+                  Patient <span className="text-red-500">*</span>
                 </label>
-                <input value={patientSearch}
-                  onChange={e => searchPatients(e.target.value)}
-                  placeholder="Type patient name or MRN..."
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
-                {patients.length > 0 && (
-                  <div className="border border-gray-200 rounded-lg mt-1 max-h-32 overflow-y-auto">
+                <div className="relative">
+                  <input
+                    value={patientSearch}
+                    onChange={e => searchPatients(e.target.value)}
+                    placeholder="Type name or MRN to search..."
+                    className={INPUT}
+                  />
+                  {form.patientId && (
+                    <CheckCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-green-500" />
+                  )}
+                </div>
+                {patients.length > 0 && !form.patientId && (
+                  <div className="border border-gray-200 rounded-lg mt-1 max-h-40 overflow-y-auto shadow-lg bg-white z-10 relative">
                     {patients.map(p => (
                       <button key={p.id}
                         onClick={() => {
-                          setForm(prev => ({...prev, patientId: p.id}))
+                          setForm(prev => ({ ...prev, patientId: p.id }))
                           setPatientSearch(`${p.firstName} ${p.lastName} — ${p.mrn}`)
                           setPatients([])
                         }}
-                        className="w-full text-left px-3 py-2 text-sm hover:bg-teal-50 border-b border-gray-50">
-                        {p.firstName} {p.lastName} — {p.mrn}
+                        className="w-full text-left px-3 py-2.5 text-sm hover:bg-teal-50 border-b border-gray-50 last:border-0">
+                        <span className="font-medium">{p.firstName} {p.lastName}</span>
+                        <span className="text-gray-400 ml-2 text-xs">{p.mrn} • {p.phone}</span>
                       </button>
                     ))}
                   </div>
                 )}
+                {form.patientId && (
+                  <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                    <CheckCircle className="w-3 h-3" /> Patient selected
+                  </p>
+                )}
               </div>
+
+              {/* Doctor */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                   Doctor <span className="text-red-500">*</span>
                 </label>
                 <select value={form.doctorId}
-                  onChange={e => setForm(p => ({...p, doctorId: e.target.value}))}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500">
+                  onChange={e => setForm(p => ({ ...p, doctorId: e.target.value }))}
+                  className={INPUT}>
                   <option value="">Select doctor...</option>
                   {doctors.map(d => (
-                    <option key={d.id} value={d.id}>Dr. {d.firstName} {d.lastName}</option>
+                    <option key={d.id} value={d.id}>
+                      Dr. {d.firstName} {d.lastName}
+                    </option>
                   ))}
                 </select>
+                {doctors.length === 0 && (
+                  <p className="text-xs text-orange-500 mt-1">
+                    No doctors found — check admin users
+                  </p>
+                )}
               </div>
+
+              {/* Date */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Date & Time <span className="text-red-500">*</span>
+                  Date <span className="text-red-500">*</span>
                 </label>
-                <input type="datetime-local" value={form.scheduledAt}
-                  onChange={e => setForm(p => ({...p, scheduledAt: e.target.value}))}
-                  min={new Date().toISOString().slice(0,16)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                <input type="date"
+                  value={form.appointmentDate}
+                  onChange={e => setForm(p => ({ ...p, appointmentDate: e.target.value }))}
+                  min={new Date().toISOString().split("T")[0]}
+                  className={INPUT} />
               </div>
+
+              {/* Time */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Reason</label>
-                <input value={form.reason}
-                  onChange={e => setForm(p => ({...p, reason: e.target.value}))}
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Time <span className="text-red-500">*</span>
+                </label>
+                <input type="time"
+                  value={form.appointmentTime}
+                  onChange={e => setForm(p => ({ ...p, appointmentTime: e.target.value }))}
+                  className={INPUT} />
+              </div>
+
+              {/* Appointment Type */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Type</label>
+                <div className="flex gap-2 flex-wrap">
+                  {["OPD","SPECIALIST","FOLLOW_UP","PROCEDURE","ANTENATAL"].map(t => (
+                    <button key={t} type="button"
+                      onClick={() => setForm(p => ({ ...p, type: t }))}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border-2 transition-colors ${
+                        form.type === t
+                          ? "border-teal-500 bg-teal-50 text-teal-700"
+                          : "border-gray-200 text-gray-500 hover:border-teal-300"
+                      }`}>
+                      {t.replace(/_/g, " ")}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Reason */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Reason / Notes
+                </label>
+                <textarea value={form.reason}
+                  onChange={e => setForm(p => ({ ...p, reason: e.target.value }))}
                   placeholder="Reason for appointment..."
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+                  rows={2}
+                  className={INPUT} />
               </div>
             </div>
+
+            {/* Ready summary */}
+            {form.patientId && form.doctorId && form.appointmentDate && form.appointmentTime && (
+              <div className="mt-4 bg-teal-50 border border-teal-200 rounded-xl p-3 text-xs text-teal-700">
+                ✅ Ready to book • {form.appointmentDate} at {form.appointmentTime} • {form.type}
+              </div>
+            )}
+
             <div className="flex gap-3 mt-5">
-              <button onClick={() => setShowForm(false)}
+              <button
+                onClick={() => { setShowForm(false); resetForm() }}
                 className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50">
                 Cancel
               </button>
               <button onClick={submit} disabled={submitting}
-                className="flex-1 py-2.5 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50">
-                {submitting ? "Booking..." : "Book Appointment"}
+                className="flex-1 py-2.5 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50 flex items-center justify-center gap-2">
+                {submitting
+                  ? <><RefreshCw className="w-4 h-4 animate-spin" /> Booking...</>
+                  : <><Calendar className="w-4 h-4" /> Confirm Booking</>}
               </button>
             </div>
           </div>
