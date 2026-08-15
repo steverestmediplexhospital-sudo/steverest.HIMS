@@ -40,8 +40,6 @@ const getUsers = async (req, res) => {
           phone:           true,
           role:            true,
           status:          true,
-          specialization:  true,
-          qualification:   true,
           isNurseInCharge: true,
           lastLogin:       true,
           createdAt:       true,
@@ -77,8 +75,7 @@ const createUser = async (req, res) => {
     const {
       firstName, lastName, email, phone,
       role, password, employeeId,
-      departmentId, specialization, qualification,
-      isNurseInCharge
+      departmentId, isNurseInCharge
     } = req.body
 
     // ✅ Validate required fields
@@ -126,9 +123,7 @@ const createUser = async (req, res) => {
         employeeId:      empId,
         status:          'ACTIVE',
         isNurseInCharge: NURSING_ROLES.includes(role) ? Boolean(isNurseInCharge) : false,
-        ...(specialization ? { specialization } : {}),
-        ...(qualification  ? { qualification  } : {}),
-        ...(departmentId   ? { department: { connect: { id: departmentId } } } : {})
+        ...(departmentId ? { department: { connect: { id: departmentId } } } : {})
       },
       select: {
         id:              true,
@@ -139,8 +134,6 @@ const createUser = async (req, res) => {
         phone:           true,
         role:            true,
         status:          true,
-        specialization:  true,
-        qualification:   true,
         isNurseInCharge: true,
         createdAt:       true,
         department: {
@@ -181,8 +174,7 @@ const updateUser = async (req, res) => {
     const { id } = req.params
     const {
       firstName, lastName, phone, role,
-      departmentId, specialization, qualification,
-      status, isNurseInCharge
+      departmentId, status, isNurseInCharge
     } = req.body
 
     // ✅ Check user exists
@@ -199,14 +191,6 @@ const updateUser = async (req, res) => {
         ...(phone     && { phone     }),
         ...(role      && { role      }),
         ...(status    && { status    }),
-        ...(specialization !== undefined && specialization
-          ? { specialization }
-          : specialization === '' ? { specialization: undefined } : {}
-        ),
-        ...(qualification !== undefined && qualification
-          ? { qualification }
-          : qualification === '' ? { qualification: undefined } : {}
-        ),
         ...(isNurseInCharge !== undefined && {
           isNurseInCharge: NURSING_ROLES.includes(effectiveRole)
             ? Boolean(isNurseInCharge)
@@ -227,8 +211,6 @@ const updateUser = async (req, res) => {
         phone:           true,
         role:            true,
         status:          true,
-        specialization:  true,
-        qualification:   true,
         isNurseInCharge: true,
         createdAt:       true,
         department: {
