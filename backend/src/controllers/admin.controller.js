@@ -4,6 +4,8 @@ const bcrypt = require('bcryptjs')
 
 const getPrisma = () => global.prisma
 
+const NURSING_ROLES = ['NURSE', 'MIDWIFE', 'THEATRE_NURSE']
+
 // ─── USERS ────────────────────────────────────────────────────────────────────
 
 const getUsers = async (req, res) => {
@@ -30,18 +32,19 @@ const getUsers = async (req, res) => {
         skip,
         take: Number(limit),
         select: {
-          id:             true,
-          employeeId:     true,
-          firstName:      true,
-          lastName:       true,
-          email:          true,
-          phone:          true,
-          role:           true,
-          status:         true,
-          specialization: true,
-          qualification:  true,
-          lastLogin:      true,
-          createdAt:      true,
+          id:              true,
+          employeeId:      true,
+          firstName:       true,
+          lastName:        true,
+          email:           true,
+          phone:           true,
+          role:            true,
+          status:          true,
+          specialization:  true,
+          qualification:   true,
+          isNurseInCharge: true,
+          lastLogin:       true,
+          createdAt:       true,
           department: {
             select: { id: true, name: true, code: true }
           }
@@ -74,7 +77,8 @@ const createUser = async (req, res) => {
     const {
       firstName, lastName, email, phone,
       role, password, employeeId,
-      departmentId, specialization, qualification
+      departmentId, specialization, qualification,
+      isNurseInCharge
     } = req.body
 
     // ✅ Validate required fields
@@ -113,30 +117,32 @@ const createUser = async (req, res) => {
 
     const user = await prisma.user.create({
       data: {
-        firstName:      firstName.trim(),
-        lastName:       lastName.trim(),
-        email:          email.toLowerCase().trim(),
-        phone:          phone.trim(),
+        firstName:       firstName.trim(),
+        lastName:        lastName.trim(),
+        email:           email.toLowerCase().trim(),
+        phone:           phone.trim(),
         role,
         passwordHash,
-        employeeId:     empId,
-        departmentId:   departmentId   || null,
-        specialization: specialization || null,
-        qualification:  qualification  || null,
-        status:         'ACTIVE'
+        employeeId:      empId,
+        specialization:  specialization || null,
+        qualification:   qualification  || null,
+        status:          'ACTIVE',
+        isNurseInCharge: NURSING_ROLES.includes(role) ? Boolean(isNurseInCharge) : false,
+        ...(departmentId ? { department: { connect: { id: departmentId } } } : {})
       },
       select: {
-        id:             true,
-        employeeId:     true,
-        firstName:      true,
-        lastName:       true,
-        email:          true,
-        phone:          true,
-        role:           true,
-        status:         true,
-        specialization: true,
-        qualification:  true,
-        createdAt:      true,
+        id:              true,
+        employeeId:      true,
+        firstName:       true,
+        lastName:        true,
+        email:           true,
+        phone:           true,
+        role:            true,
+        status:          true,
+        specialization:  true,
+        qualification:   true,
+        isNurseInCharge: true,
+        createdAt:       true,
         department: {
           select: { id: true, name: true, code: true }
         }
@@ -175,12 +181,15 @@ const updateUser = async (req, res) => {
     const { id } = req.params
     const {
       firstName, lastName, phone, role,
-      departmentId, specialization, qualification, status
+      departmentId, specialization, qualification,
+      status, isNurseInCharge
     } = req.body
 
     // ✅ Check user exists
     const existing = await prisma.user.findUnique({ where: { id } })
     if (!existing) return sendError(res, 'User not found', 404)
+
+    const effectiveRole = role || existing.role
 
     const user = await prisma.user.update({
       where: { id },
@@ -190,22 +199,32 @@ const updateUser = async (req, res) => {
         ...(phone     && { phone     }),
         ...(role      && { role      }),
         ...(status    && { status    }),
-        departmentId:   departmentId   !== undefined ? departmentId   || null : undefined,
-        specialization: specialization !== undefined ? specialization || null : undefined,
-        qualification:  qualification  !== undefined ? qualification  || null : undefined
+        ...(specialization !== undefined && { specialization: specialization || null }),
+        ...(qualification  !== undefined && { qualification:  qualification  || null }),
+        ...(isNurseInCharge !== undefined && {
+          isNurseInCharge: NURSING_ROLES.includes(effectiveRole)
+            ? Boolean(isNurseInCharge)
+            : false
+        }),
+        ...(departmentId !== undefined && {
+          department: departmentId
+            ? { connect: { id: departmentId } }
+            : { disconnect: true }
+        })
       },
       select: {
-        id:             true,
-        employeeId:     true,
-        firstName:      true,
-        lastName:       true,
-        email:          true,
-        phone:          true,
-        role:           true,
-        status:         true,
-        specialization: true,
-        qualification:  true,
-        createdAt:      true,
+        id:              true,
+        employeeId:      true,
+        firstName:       true,
+        lastName:        true,
+        email:           true,
+        phone:           true,
+        role:            true,
+        status:          true,
+        specialization:  true,
+        qualification:   true,
+        isNurseInCharge: true,
+        createdAt:       true,
         department: {
           select: { id: true, name: true, code: true }
         }
@@ -560,7 +579,7 @@ const getSettings = async (req, res) => {
 
 const updateSetting = async (req, res) => {
   try {
-    const prisma            = getPrisma()
+    const prisma                = getPrisma()
     const { key, value, group } = req.body
 
     if (!key || value === undefined) {
