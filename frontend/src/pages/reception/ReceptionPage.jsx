@@ -3,17 +3,20 @@ import { useNavigate } from "react-router-dom"
 import api from "../../services/api"
 import { toast } from "react-hot-toast"
 import {
-  Users, UserPlus, Search, Calendar, Clock, ChevronRight,
-  Phone, MapPin, Heart, AlertCircle, FileText, Activity,
+  UserPlus, Search, Calendar, Clock,
+  Phone, Heart, AlertCircle, FileText, Activity,
   X, Save, CheckCircle, User, RefreshCw, Eye, Edit3
 } from "lucide-react"
 
 const TABS = [
-  { id: "register",     label: "Register Patient",   icon: UserPlus },
-  { id: "search",       label: "Find Patient",        icon: Search },
-  { id: "queue",        label: "OPD Queue",           icon: Activity },
-  { id: "appointments", label: "Appointments",        icon: Calendar }
+  { id: "register",     label: "Register Patient", icon: UserPlus  },
+  { id: "search",       label: "Find Patient",      icon: Search    },
+  { id: "queue",        label: "OPD Queue",         icon: Activity  },
+  { id: "appointments", label: "Appointments",      icon: Calendar  }
 ]
+
+const INPUT = "w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+const LABEL = "block text-xs font-semibold text-gray-600 mb-1.5"
 
 export default function ReceptionPage() {
   const navigate = useNavigate()
@@ -22,22 +25,25 @@ export default function ReceptionPage() {
 
   useEffect(() => { fetchStats() }, [])
 
-  const fetchDoctors = async () => {
-  try {
-    const [d1, d2] = await Promise.allSettled([
-      api.get("/admin/users?role=DOCTOR&limit=100"),
-      api.get("/admin/users?role=SURGEON&limit=100")
-    ])
-    const docs  = d1.status === "fulfilled"
-      ? (d1.value.data.data?.users || d1.value.data.data || []) : []
-    const surgs = d2.status === "fulfilled"
-      ? (d2.value.data.data?.users || d2.value.data.data || []) : []
-    setDoctors([...docs, ...surgs])
-    console.log("Doctors loaded:", [...docs, ...surgs].length)
-  } catch (e) {
-    console.error("fetchDoctors error:", e)
+  const fetchStats = async () => {
+    try {
+      const [pRes, vRes] = await Promise.allSettled([
+        api.get("/patients?limit=1"),
+        api.get(`/visits?date=${new Date().toISOString().split("T")[0]}`)
+      ])
+      const visits = vRes.status === "fulfilled"
+        ? vRes.value.data.data?.visits || vRes.value.data.data || []
+        : []
+      setStats({
+        today:        visits.length,
+        total:        pRes.status === "fulfilled"
+          ? pRes.value.data.data?.meta?.total || pRes.value.data.meta?.total || 0
+          : 0,
+        waiting:      visits.filter(v => ["WAITING","TRIAGED"].includes(v.status)).length,
+        appointments: 0
+      })
+    } catch (e) {}
   }
-}
 
   return (
     <div className="space-y-5">
@@ -51,9 +57,9 @@ export default function ReceptionPage() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: "Today Visits",   value: stats.today },
-              { label: "Waiting",        value: stats.waiting },
-              { label: "Total Patients", value: stats.total },
+              { label: "Today Visits",   value: stats.today        },
+              { label: "Waiting",        value: stats.waiting      },
+              { label: "Total Patients", value: stats.total        },
               { label: "Appointments",   value: stats.appointments }
             ].map(s => (
               <div key={s.label} className="bg-white/20 rounded-xl px-4 py-2 text-center">
@@ -93,9 +99,9 @@ export default function ReceptionPage() {
   )
 }
 
-// ── Full Patient Registration Form ───────────────────────────
+// ── Patient Registration Form ────────────────────────────────
 function PatientRegistrationForm({ onSuccess, editPatient = null }) {
-  const [step, setStep] = useState(1)
+  const [step, setStep]         = useState(1)
   const [submitting, setSubmitting] = useState(false)
   const [form, setForm] = useState({
     firstName: "", lastName: "", middleName: "", dateOfBirth: "",
@@ -115,10 +121,10 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
   const set = (f, v) => setForm(p => ({ ...p, [f]: v }))
 
   const STEPS = [
-    { n: 1, label: "Personal Info" },
-    { n: 2, label: "Contact Details" },
-    { n: 3, label: "Medical History" },
-    { n: 4, label: "Insurance & Visit" }
+    { n: 1, label: "Personal Info"    },
+    { n: 2, label: "Contact Details"  },
+    { n: 3, label: "Medical History"  },
+    { n: 4, label: "Insurance & Visit"}
   ]
 
   const handleSubmit = async () => {
@@ -138,8 +144,8 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
         patient = res.data.data?.patient || res.data.data
         if (form.chiefComplaint && patient?.id) {
           await api.post("/visits", {
-            patientId: patient.id,
-            visitType: form.visitType || "OPD",
+            patientId:     patient.id,
+            visitType:     form.visitType || "OPD",
             chiefComplaint: form.chiefComplaint
           })
         }
@@ -151,10 +157,6 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
     } finally { setSubmitting(false) }
   }
 
-  const INPUT = "w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-  const LABEL = "block text-xs font-semibold text-gray-600 mb-1.5"
-  const REQ   = <span className="text-red-500">*</span>
-
   return (
     <div>
       {/* Step Progress */}
@@ -162,7 +164,8 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
         {STEPS.map((s, i) => (
           <div key={s.n} className="flex items-center flex-1">
             <div className="flex items-center gap-2">
-              <div onClick={() => step > s.n && setStep(s.n)}
+              <div
+                onClick={() => step > s.n && setStep(s.n)}
                 className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
                   step === s.n ? "bg-teal-600 text-white" :
                   step >  s.n ? "bg-green-500 text-white cursor-pointer" :
@@ -181,24 +184,34 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
         ))}
       </div>
 
-      {/* Step 1 */}
+      {/* Step 1 — Personal Info */}
       {step === 1 && (
         <div className="space-y-4">
           <h3 className="font-semibold text-gray-800 flex items-center gap-2">
             <User className="w-4 h-4 text-teal-600" /> Personal Information
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div><label className={LABEL}>First Name {REQ}</label>
-              <input value={form.firstName} onChange={e => set("firstName", e.target.value)} placeholder="First name" className={INPUT} /></div>
-            <div><label className={LABEL}>Middle Name</label>
-              <input value={form.middleName} onChange={e => set("middleName", e.target.value)} placeholder="Middle name" className={INPUT} /></div>
-            <div><label className={LABEL}>Last Name {REQ}</label>
-              <input value={form.lastName} onChange={e => set("lastName", e.target.value)} placeholder="Last name" className={INPUT} /></div>
+            <div>
+              <label className={LABEL}>First Name <span className="text-red-500">*</span></label>
+              <input value={form.firstName} onChange={e => set("firstName", e.target.value)}
+                placeholder="First name" className={INPUT} />
+            </div>
+            <div>
+              <label className={LABEL}>Middle Name</label>
+              <input value={form.middleName} onChange={e => set("middleName", e.target.value)}
+                placeholder="Middle name" className={INPUT} />
+            </div>
+            <div>
+              <label className={LABEL}>Last Name <span className="text-red-500">*</span></label>
+              <input value={form.lastName} onChange={e => set("lastName", e.target.value)}
+                placeholder="Last name" className={INPUT} />
+            </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className={LABEL}>Date of Birth {REQ}</label>
-              <input type="date" value={form.dateOfBirth} onChange={e => set("dateOfBirth", e.target.value)}
+              <label className={LABEL}>Date of Birth <span className="text-red-500">*</span></label>
+              <input type="date" value={form.dateOfBirth}
+                onChange={e => set("dateOfBirth", e.target.value)}
                 max={new Date().toISOString().split("T")[0]} className={INPUT} />
               {form.dateOfBirth && (
                 <p className="text-xs text-gray-400 mt-1">
@@ -207,7 +220,7 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
               )}
             </div>
             <div>
-              <label className={LABEL}>Gender {REQ}</label>
+              <label className={LABEL}>Gender <span className="text-red-500">*</span></label>
               <select value={form.gender} onChange={e => set("gender", e.target.value)} className={INPUT}>
                 <option value="">Select gender...</option>
                 <option value="MALE">Male</option>
@@ -236,15 +249,23 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
                 ))}
               </select>
             </div>
-            <div><label className={LABEL}>Nationality</label>
-              <input value={form.nationality} onChange={e => set("nationality", e.target.value)} className={INPUT} /></div>
-            <div><label className={LABEL}>National ID / NIN</label>
-              <input value={form.nationalId} onChange={e => set("nationalId", e.target.value)} placeholder="NIN / ID number" className={INPUT} /></div>
-            <div><label className={LABEL}>Religion</label>
-              <input value={form.religion} onChange={e => set("religion", e.target.value)} placeholder="Optional" className={INPUT} /></div>
+            <div>
+              <label className={LABEL}>Nationality</label>
+              <input value={form.nationality} onChange={e => set("nationality", e.target.value)} className={INPUT} />
+            </div>
+            <div>
+              <label className={LABEL}>National ID / NIN</label>
+              <input value={form.nationalId} onChange={e => set("nationalId", e.target.value)}
+                placeholder="NIN / ID number" className={INPUT} />
+            </div>
+            <div>
+              <label className={LABEL}>Religion</label>
+              <input value={form.religion} onChange={e => set("religion", e.target.value)}
+                placeholder="Optional" className={INPUT} />
+            </div>
           </div>
           <div>
-            <label className={LABEL}>Patient Type {REQ}</label>
+            <label className={LABEL}>Patient Type <span className="text-red-500">*</span></label>
             <div className="flex gap-3 flex-wrap">
               {["OUTPATIENT","INPATIENT","EMERGENCY","ANTENATAL","NEWBORN"].map(t => (
                 <button key={t} type="button" onClick={() => set("patientType", t)}
@@ -259,28 +280,43 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
         </div>
       )}
 
-      {/* Step 2 */}
+      {/* Step 2 — Contact */}
       {step === 2 && (
         <div className="space-y-4">
           <h3 className="font-semibold text-gray-800 flex items-center gap-2">
             <Phone className="w-4 h-4 text-teal-600" /> Contact Details
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div><label className={LABEL}>Primary Phone {REQ}</label>
-              <input value={form.phone} onChange={e => set("phone", e.target.value)} placeholder="080XXXXXXXX" className={INPUT} /></div>
-            <div><label className={LABEL}>Alternative Phone</label>
-              <input value={form.altPhone} onChange={e => set("altPhone", e.target.value)} placeholder="Optional" className={INPUT} /></div>
-            <div><label className={LABEL}>Email Address</label>
-              <input type="email" value={form.email} onChange={e => set("email", e.target.value)} placeholder="Optional" className={INPUT} /></div>
+            <div>
+              <label className={LABEL}>Primary Phone <span className="text-red-500">*</span></label>
+              <input value={form.phone} onChange={e => set("phone", e.target.value)}
+                placeholder="080XXXXXXXX" className={INPUT} />
+            </div>
+            <div>
+              <label className={LABEL}>Alternative Phone</label>
+              <input value={form.altPhone} onChange={e => set("altPhone", e.target.value)}
+                placeholder="Optional" className={INPUT} />
+            </div>
+            <div>
+              <label className={LABEL}>Email Address</label>
+              <input type="email" value={form.email} onChange={e => set("email", e.target.value)}
+                placeholder="Optional" className={INPUT} />
+            </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div><label className={LABEL}>Physical Address {REQ}</label>
+            <div>
+              <label className={LABEL}>Physical Address <span className="text-red-500">*</span></label>
               <textarea value={form.address} onChange={e => set("address", e.target.value)}
-                placeholder="Street, Estate, Area..." rows={2} className={INPUT} /></div>
+                placeholder="Street, Estate, Area..." rows={2} className={INPUT} />
+            </div>
             <div className="space-y-3">
-              <div><label className={LABEL}>City/Town</label>
-                <input value={form.city} onChange={e => set("city", e.target.value)} placeholder="e.g. Lagos" className={INPUT} /></div>
-              <div><label className={LABEL}>State</label>
+              <div>
+                <label className={LABEL}>City/Town</label>
+                <input value={form.city} onChange={e => set("city", e.target.value)}
+                  placeholder="e.g. Lagos" className={INPUT} />
+              </div>
+              <div>
+                <label className={LABEL}>State</label>
                 <select value={form.state} onChange={e => set("state", e.target.value)} className={INPUT}>
                   <option value="">Select state...</option>
                   {["Abia","Adamawa","Akwa Ibom","Anambra","Bauchi","Bayelsa","Benue","Borno",
@@ -299,11 +335,14 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
               <AlertCircle className="w-4 h-4 text-orange-500" /> Emergency Contact
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div><label className={LABEL}>Contact Name {REQ}</label>
-                <input value={form.emergencyContactName} onChange={e => set("emergencyContactName", e.target.value)}
-                  placeholder="Full name" className={INPUT} /></div>
               <div>
-                <label className={LABEL}>Relationship {REQ}</label>
+                <label className={LABEL}>Contact Name <span className="text-red-500">*</span></label>
+                <input value={form.emergencyContactName}
+                  onChange={e => set("emergencyContactName", e.target.value)}
+                  placeholder="Full name" className={INPUT} />
+              </div>
+              <div>
+                <label className={LABEL}>Relationship <span className="text-red-500">*</span></label>
                 <select value={form.emergencyContactRelation}
                   onChange={e => set("emergencyContactRelation", e.target.value)} className={INPUT}>
                   <option value="">Select...</option>
@@ -312,18 +351,24 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
                   ))}
                 </select>
               </div>
-              <div><label className={LABEL}>Phone {REQ}</label>
-                <input value={form.emergencyContactPhone} onChange={e => set("emergencyContactPhone", e.target.value)}
-                  placeholder="080XXXXXXXX" className={INPUT} /></div>
-              <div><label className={LABEL}>Address</label>
-                <input value={form.emergencyContactAddress} onChange={e => set("emergencyContactAddress", e.target.value)}
-                  placeholder="Optional" className={INPUT} /></div>
+              <div>
+                <label className={LABEL}>Phone <span className="text-red-500">*</span></label>
+                <input value={form.emergencyContactPhone}
+                  onChange={e => set("emergencyContactPhone", e.target.value)}
+                  placeholder="080XXXXXXXX" className={INPUT} />
+              </div>
+              <div>
+                <label className={LABEL}>Address</label>
+                <input value={form.emergencyContactAddress}
+                  onChange={e => set("emergencyContactAddress", e.target.value)}
+                  placeholder="Optional" className={INPUT} />
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Step 3 */}
+      {/* Step 3 — Medical History */}
       {step === 3 && (
         <div className="space-y-4">
           <h3 className="font-semibold text-gray-800 flex items-center gap-2">
@@ -334,11 +379,11 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
               <AlertCircle className="w-4 h-4" /> Allergies (Drug, Food, Environmental)
             </p>
             <textarea value={form.allergies} onChange={e => set("allergies", e.target.value)}
-              placeholder="List all known allergies and reactions. Write NKDA if no known drug allergies..."
+              placeholder="List all known allergies. Write NKDA if none..."
               rows={3} className={INPUT} />
           </div>
           <div>
-            <label className={LABEL}>Chronic/Pre-existing Conditions</label>
+            <label className={LABEL}>Chronic / Pre-existing Conditions</label>
             <div className="flex flex-wrap gap-2 mb-2">
               {["Diabetes Mellitus","Hypertension","Asthma","Heart Disease","HIV/AIDS",
                 "Epilepsy","Sickle Cell Disease","Thyroid Disease","Cancer","CKD"].map(c => (
@@ -350,14 +395,16 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
                 </button>
               ))}
             </div>
-            <textarea value={form.chronicConditions} onChange={e => set("chronicConditions", e.target.value)}
-              placeholder="List chronic conditions, previous surgeries, significant medical history..."
+            <textarea value={form.chronicConditions}
+              onChange={e => set("chronicConditions", e.target.value)}
+              placeholder="List chronic conditions, previous surgeries..."
               rows={3} className={INPUT} />
           </div>
           <div>
             <label className={LABEL}>Current Medications</label>
-            <textarea value={form.currentMedications} onChange={e => set("currentMedications", e.target.value)}
-              placeholder="List all medications patient is currently taking with doses..."
+            <textarea value={form.currentMedications}
+              onChange={e => set("currentMedications", e.target.value)}
+              placeholder="List all current medications with doses..."
               rows={3} className={INPUT} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -373,7 +420,7 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
         </div>
       )}
 
-      {/* Step 4 */}
+      {/* Step 4 — Insurance & Visit */}
       {step === 4 && (
         <div className="space-y-4">
           <h3 className="font-semibold text-gray-800 flex items-center gap-2">
@@ -384,7 +431,8 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className={LABEL}>Insurance Provider</label>
-                <select value={form.insuranceProvider} onChange={e => set("insuranceProvider", e.target.value)} className={INPUT}>
+                <select value={form.insuranceProvider}
+                  onChange={e => set("insuranceProvider", e.target.value)} className={INPUT}>
                   <option value="">Self Pay / Cash</option>
                   {["NHIS","Hygeia HMO","Reliance HMO","AXA Mansard","Leadway Health",
                     "Avon HMO","Total Health Trust","Clearline HMO","Redcare HMO",
@@ -393,12 +441,18 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
                   ))}
                 </select>
               </div>
-              <div><label className={LABEL}>Policy Number</label>
-                <input value={form.insurancePolicyNumber} onChange={e => set("insurancePolicyNumber", e.target.value)}
-                  placeholder="Policy/Card number" className={INPUT} /></div>
-              <div><label className={LABEL}>Member Number</label>
-                <input value={form.insuranceMemberNumber} onChange={e => set("insuranceMemberNumber", e.target.value)}
-                  placeholder="Member ID" className={INPUT} /></div>
+              <div>
+                <label className={LABEL}>Policy Number</label>
+                <input value={form.insurancePolicyNumber}
+                  onChange={e => set("insurancePolicyNumber", e.target.value)}
+                  placeholder="Policy/Card number" className={INPUT} />
+              </div>
+              <div>
+                <label className={LABEL}>Member Number</label>
+                <input value={form.insuranceMemberNumber}
+                  onChange={e => set("insuranceMemberNumber", e.target.value)}
+                  placeholder="Member ID" className={INPUT} />
+              </div>
             </div>
           </div>
           <div className="border border-teal-200 bg-teal-50 rounded-xl p-4 space-y-4">
@@ -414,12 +468,12 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
               </div>
               <div>
                 <label className={LABEL}>Chief Complaint</label>
-                <input value={form.chiefComplaint} onChange={e => set("chiefComplaint", e.target.value)}
+                <input value={form.chiefComplaint}
+                  onChange={e => set("chiefComplaint", e.target.value)}
                   placeholder="Main reason for visit today..." className={INPUT} />
               </div>
             </div>
           </div>
-          {/* Summary */}
           <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
             <h4 className="font-medium text-gray-700 mb-3">Registration Summary</h4>
             <div className="grid grid-cols-2 gap-2 text-sm">
@@ -453,7 +507,7 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
           {step < 4 ? (
             <button onClick={() => {
               if (step === 1 && (!form.firstName || !form.lastName || !form.gender || !form.dateOfBirth)) {
-                toast.error("Fill required fields: First Name, Last Name, Gender, Date of Birth")
+                toast.error("Fill required fields: Name, Gender, Date of Birth")
                 return
               }
               setStep(s => s + 1)
@@ -476,13 +530,13 @@ function PatientRegistrationForm({ onSuccess, editPatient = null }) {
 
 // ── Patient Search ───────────────────────────────────────────
 function PatientSearch({ navigate }) {
-  const [search, setSearch]     = useState("")
-  const [results, setResults]   = useState([])
-  const [loading, setLoading]   = useState(false)
-  const [selected, setSelected] = useState(null)
+  const [search,       setSearch]   = useState("")
+  const [results,      setResults]  = useState([])
+  const [loading,      setLoading]  = useState(false)
+  const [selected,     setSelected] = useState(null)
   const [showNewVisit, setShowNewVisit] = useState(false)
-  const [visitForm, setVisitForm] = useState({ visitType: "OPD", chiefComplaint: "" })
-  const [creating, setCreating] = useState(false)
+  const [visitForm,    setVisitForm]    = useState({ visitType: "OPD", chiefComplaint: "" })
+  const [creating,     setCreating]     = useState(false)
 
   const doSearch = async () => {
     if (!search.trim()) return
@@ -544,12 +598,12 @@ function PatientSearch({ navigate }) {
           <p className="text-sm text-gray-500">{results.length} patient(s) found</p>
           {results.map(patient => (
             <div key={patient.id}
+              onClick={() => setSelected(selected?.id === patient.id ? null : patient)}
               className={`border-2 rounded-xl p-4 cursor-pointer transition-all ${
                 selected?.id === patient.id
                   ? "border-teal-500 bg-teal-50"
                   : "border-gray-200 hover:border-teal-300"
-              }`}
-              onClick={() => setSelected(selected?.id === patient.id ? null : patient)}>
+              }`}>
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 font-bold text-sm">
@@ -582,8 +636,8 @@ function PatientSearch({ navigate }) {
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                    patient.patientType === "INPATIENT"  ? "bg-blue-100 text-blue-700"  :
-                    patient.patientType === "EMERGENCY"  ? "bg-red-100 text-red-700"    :
+                    patient.patientType === "INPATIENT" ? "bg-blue-100 text-blue-700"  :
+                    patient.patientType === "EMERGENCY" ? "bg-red-100 text-red-700"    :
                     "bg-green-100 text-green-700"
                   }`}>{patient.patientType}</span>
                   <button
@@ -615,7 +669,6 @@ function PatientSearch({ navigate }) {
         </div>
       )}
 
-      {/* New Visit Modal */}
       {showNewVisit && selected && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
@@ -671,7 +724,7 @@ function PatientSearch({ navigate }) {
 
 // ── OPD Queue ────────────────────────────────────────────────
 function OPDQueue({ navigate }) {
-  const [visits, setVisits]   = useState([])
+  const [visits,  setVisits]  = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -693,13 +746,13 @@ function OPDQueue({ navigate }) {
   }
 
   const STATUS_LABEL = {
-    WAITING:           { label: "Waiting",         color: "bg-gray-100 text-gray-600"     },
-    TRIAGED:           { label: "Triaged",          color: "bg-blue-100 text-blue-700"     },
-    VITALS_DONE:       { label: "Vitals Done",      color: "bg-purple-100 text-purple-700" },
-    IN_CONSULTATION:   { label: "In Consultation",  color: "bg-yellow-100 text-yellow-700" },
-    AWAITING_LAB:      { label: "Awaiting Lab",     color: "bg-orange-100 text-orange-700" },
-    CONSULTATION_DONE: { label: "Consult Done",     color: "bg-green-100 text-green-700"   },
-    COMPLETED:         { label: "Completed",        color: "bg-teal-100 text-teal-700"     }
+    WAITING:           { label: "Waiting",        color: "bg-gray-100 text-gray-600"     },
+    TRIAGED:           { label: "Triaged",         color: "bg-blue-100 text-blue-700"     },
+    VITALS_DONE:       { label: "Vitals Done",     color: "bg-purple-100 text-purple-700" },
+    IN_CONSULTATION:   { label: "In Consultation", color: "bg-yellow-100 text-yellow-700" },
+    AWAITING_LAB:      { label: "Awaiting Lab",    color: "bg-orange-100 text-orange-700" },
+    CONSULTATION_DONE: { label: "Consult Done",    color: "bg-green-100 text-green-700"   },
+    COMPLETED:         { label: "Completed",       color: "bg-teal-100 text-teal-700"     }
   }
 
   const getWait = (t) => {
@@ -760,10 +813,10 @@ function OPDQueue({ navigate }) {
 
 // ── Appointments Tab ─────────────────────────────────────────
 function AppointmentsTab() {
-  const [appointments, setAppointments] = useState([])
-  const [loading, setLoading]           = useState(true)
-  const [showForm, setShowForm]         = useState(false)
-  const [form, setForm] = useState({
+  const [appointments,  setAppointments]  = useState([])
+  const [loading,       setLoading]       = useState(true)
+  const [showForm,      setShowForm]      = useState(false)
+  const [form,          setForm]          = useState({
     patientId: "", doctorId: "",
     appointmentDate: "", appointmentTime: "",
     reason: "", type: "OPD"
@@ -790,8 +843,8 @@ function AppointmentsTab() {
   const fetchDoctors = async () => {
     try {
       const [d1, d2] = await Promise.allSettled([
-        api.get("/admin/users?role=DOCTOR"),
-        api.get("/admin/users?role=SURGEON")
+        api.get("/admin/users?role=DOCTOR&limit=100"),
+        api.get("/admin/users?role=SURGEON&limit=100")
       ])
       const docs  = d1.status === "fulfilled"
         ? (d1.value.data.data?.users || d1.value.data.data || []) : []
@@ -803,7 +856,6 @@ function AppointmentsTab() {
 
   const searchPatients = async (q) => {
     setPatientSearch(q)
-    // Clear selected patient if user is typing again
     if (form.patientId) setForm(p => ({ ...p, patientId: "" }))
     if (q.length < 2) { setPatients([]); return }
     try {
@@ -824,22 +876,10 @@ function AppointmentsTab() {
   }
 
   const submit = async () => {
-    if (!form.patientId) {
-      toast.error("Please search and select a patient")
-      return
-    }
-    if (!form.doctorId) {
-      toast.error("Please select a doctor")
-      return
-    }
-    if (!form.appointmentDate) {
-      toast.error("Please select a date")
-      return
-    }
-    if (!form.appointmentTime) {
-      toast.error("Please select a time")
-      return
-    }
+    if (!form.patientId)       { toast.error("Please search and select a patient"); return }
+    if (!form.doctorId)        { toast.error("Please select a doctor"); return }
+    if (!form.appointmentDate) { toast.error("Please select a date"); return }
+    if (!form.appointmentTime) { toast.error("Please select a time"); return }
     setSubmitting(true)
     try {
       await api.post("/appointments", {
@@ -869,8 +909,6 @@ function AppointmentsTab() {
     NO_SHOW:     "bg-gray-100 text-gray-600"
   }
 
-  const INPUT = "w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -896,22 +934,18 @@ function AppointmentsTab() {
             <div className="text-center flex-shrink-0 bg-teal-50 rounded-xl p-2 w-16">
               <p className="text-xs text-gray-500">Time</p>
               <p className="text-sm font-bold text-teal-700">
-                {appt.appointmentTime ||
-                  new Date(appt.appointmentDate).toLocaleTimeString([],
-                    { hour: "2-digit", minute: "2-digit" })}
+                {appt.appointmentTime || "—"}
               </p>
             </div>
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-gray-800">
                 {appt.patient?.firstName} {appt.patient?.lastName}
-                {appt.patient?.fullName}
               </p>
               <p className="text-xs text-gray-400">
-                Dr. {appt.doctor?.firstName} {appt.doctor?.lastName}
-                {appt.doctor?.name} • {appt.reason || appt.type}
+                Dr. {appt.doctor?.firstName} {appt.doctor?.lastName} • {appt.reason || appt.appointmentType || appt.type}
               </p>
             </div>
-            <span className={`text-xs px-2 py-1 rounded-full font-medium
+            <span className={`text-xs px-2 py-1 rounded-full font-medium flex-shrink-0
               ${STATUS_COLOR[appt.status] || "bg-gray-100 text-gray-600"}`}>
               {appt.status}
             </span>
@@ -919,7 +953,7 @@ function AppointmentsTab() {
         ))
       )}
 
-      {/* ── Book Appointment Modal ── */}
+      {/* Book Appointment Modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
@@ -932,19 +966,16 @@ function AppointmentsTab() {
             </div>
 
             <div className="space-y-4">
-
-              {/* Patient Search */}
+              {/* Patient */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                   Patient <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
-                  <input
-                    value={patientSearch}
+                  <input value={patientSearch}
                     onChange={e => searchPatients(e.target.value)}
                     placeholder="Type name or MRN to search..."
-                    className={INPUT}
-                  />
+                    className={INPUT} />
                   {form.patientId && (
                     <CheckCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-green-500" />
                   )}
@@ -988,9 +1019,7 @@ function AppointmentsTab() {
                   ))}
                 </select>
                 {doctors.length === 0 && (
-                  <p className="text-xs text-orange-500 mt-1">
-                    No doctors found — check admin users
-                  </p>
+                  <p className="text-xs text-orange-500 mt-1">No doctors found</p>
                 )}
               </div>
 
@@ -999,8 +1028,7 @@ function AppointmentsTab() {
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                   Date <span className="text-red-500">*</span>
                 </label>
-                <input type="date"
-                  value={form.appointmentDate}
+                <input type="date" value={form.appointmentDate}
                   onChange={e => setForm(p => ({ ...p, appointmentDate: e.target.value }))}
                   min={new Date().toISOString().split("T")[0]}
                   className={INPUT} />
@@ -1011,13 +1039,12 @@ function AppointmentsTab() {
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                   Time <span className="text-red-500">*</span>
                 </label>
-                <input type="time"
-                  value={form.appointmentTime}
+                <input type="time" value={form.appointmentTime}
                   onChange={e => setForm(p => ({ ...p, appointmentTime: e.target.value }))}
                   className={INPUT} />
               </div>
 
-              {/* Appointment Type */}
+              {/* Type */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Type</label>
                 <div className="flex gap-2 flex-wrap">
@@ -1043,12 +1070,10 @@ function AppointmentsTab() {
                 <textarea value={form.reason}
                   onChange={e => setForm(p => ({ ...p, reason: e.target.value }))}
                   placeholder="Reason for appointment..."
-                  rows={2}
-                  className={INPUT} />
+                  rows={2} className={INPUT} />
               </div>
             </div>
 
-            {/* Ready summary */}
             {form.patientId && form.doctorId && form.appointmentDate && form.appointmentTime && (
               <div className="mt-4 bg-teal-50 border border-teal-200 rounded-xl p-3 text-xs text-teal-700">
                 ✅ Ready to book • {form.appointmentDate} at {form.appointmentTime} • {form.type}
@@ -1056,8 +1081,7 @@ function AppointmentsTab() {
             )}
 
             <div className="flex gap-3 mt-5">
-              <button
-                onClick={() => { setShowForm(false); resetForm() }}
+              <button onClick={() => { setShowForm(false); resetForm() }}
                 className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50">
                 Cancel
               </button>
