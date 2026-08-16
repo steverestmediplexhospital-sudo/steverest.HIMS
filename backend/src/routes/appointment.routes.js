@@ -1,63 +1,71 @@
-﻿
-
-// backend/src/routes/appointment.routes.js
+﻿// backend/src/routes/appointments.routes.js
 const express = require('express')
-const router = express.Router()
-const auth = require('../middleware/auth.middleware')
+const router  = express.Router()
+const auth    = require('../middleware/auth.middleware')
 const { generateAppointmentNo } = require('../services/id-generator.service')
 const { sendResponse, sendError } = require('../utils/response.utils')
 
-// ALWAYS use global.prisma — never new PrismaClient()
 const getPrisma = () => global.prisma
 
 router.use(auth)
 
+// ── Patient & Doctor select helpers ─────────────────────────
+const PATIENT_SELECT = {
+  id: true, mrn: true,
+  firstName: true, lastName: true,
+  phone: true, gender: true, dateOfBirth: true
+}
+
+const DOCTOR_SELECT = {
+  id: true, firstName: true, lastName: true,
+  email: true, role: true
+}
+
+const CREATED_BY_SELECT = {
+  id: true, firstName: true, lastName: true
+}
+
+// ── POST / — Create appointment ──────────────────────────────
 router.post('/', async (req, res) => {
   try {
     const prisma = getPrisma()
-    const { 
-      patientId, doctorId, appointmentDate, 
-      appointmentTime, reason, notes, type 
+    const {
+      patientId, doctorId, appointmentDate,
+      appointmentTime, reason, notes, type
     } = req.body
 
-    if (!patientId)        return sendError(res, 400, 'Patient ID is required')
-    if (!appointmentDate)  return sendError(res, 400, 'Appointment date is required')
+    if (!patientId)       return sendError(res, 400, 'Patient ID is required')
+    if (!appointmentDate) return sendError(res, 400, 'Appointment date is required')
 
     const appointmentNo = await generateAppointmentNo()
-    
+
     const appointment = await prisma.appointment.create({
       data: {
         appointmentNo,
         patientId,
-        doctorId:        doctorId || null,
+        doctorId:        doctorId        || null,
         appointmentDate: new Date(appointmentDate),
         appointmentTime: appointmentTime || null,
-        reason:          reason || null,
-        notes:           notes  || null,
-        type:            type   || 'OPD',
+        appointmentType: type            || 'OPD',
+        reason:          reason          || null,
+        notes:           notes           || null,
         status:          'SCHEDULED',
         createdById:     req.user.id,
       },
       include: {
-        patient: {
-          select: {
-            id: true, patientId: true, fullName: true,
-            phone: true, gender: true, dateOfBirth: true
-          }
-        },
-        doctor: {
-          select: { id: true, name: true, specialization: true }
-        }
+        patient:   { select: PATIENT_SELECT },
+        doctor:    { select: DOCTOR_SELECT },
+        createdBy: { select: CREATED_BY_SELECT }
       }
     })
 
-    // Socket.IO notification to assigned doctor
+    // Notify doctor via Socket.IO
     const io = req.app.get('io')
     if (io && doctorId) {
       io.to(`user:${doctorId}`).emit('appointment:new', {
         appointmentId: appointment.id,
         appointmentNo: appointment.appointmentNo,
-        patientName:   appointment.patient?.fullName,
+        patientName:   `${appointment.patient?.firstName} ${appointment.patient?.lastName}`,
         date:          appointmentDate,
       })
     }
@@ -69,21 +77,22 @@ router.post('/', async (req, res) => {
   }
 })
 
+// ── GET / — List appointments ────────────────────────────────
 router.get('/', async (req, res) => {
   try {
     const prisma = getPrisma()
-    const { 
-      doctorId, patientId, date, status, 
-      type, page = 1, limit = 50 
+    const {
+      doctorId, patientId, date, status,
+      type, page = 1, limit = 50
     } = req.query
 
-    const skip = (parseInt(page) - 1) * parseInt(limit)
+    const skip  = (parseInt(page) - 1) * parseInt(limit)
     const where = {}
 
-    if (doctorId)  where.doctorId  = doctorId
-    if (patientId) where.patientId = patientId
-    if (status)    where.status    = status
-    if (type)      where.type      = type
+    if (doctorId)  where.doctorId       = doctorId
+    if (patientId) where.patientId      = patientId
+    if (status)    where.status         = status
+    if (type)      where.appointmentType = type
 
     if (date) {
       where.appointmentDate = {
@@ -96,21 +105,12 @@ router.get('/', async (req, res) => {
       prisma.appointment.findMany({
         where,
         skip,
-        take:      parseInt(limit),
-        orderBy:   { appointmentDate: 'asc' },
+        take:    parseInt(limit),
+        orderBy: { appointmentDate: 'asc' },
         include: {
-          patient: {
-            select: {
-              id: true, patientId: true, fullName: true,
-              phone: true, gender: true, dateOfBirth: true
-            }
-          },
-          doctor: {
-            select: { id: true, name: true, specialization: true }
-          },
-          createdBy: {
-            select: { id: true, name: true }
-          }
+          patient:   { select: PATIENT_SELECT },
+          doctor:    { select: DOCTOR_SELECT },
+          createdBy: { select: CREATED_BY_SELECT }
         }
       }),
       prisma.appointment.count({ where })
@@ -131,6 +131,7 @@ router.get('/', async (req, res) => {
   }
 })
 
+// ── GET /today — Today's appointments ───────────────────────
 router.get('/today', async (req, res) => {
   try {
     const prisma = getPrisma()
@@ -139,25 +140,17 @@ router.get('/today', async (req, res) => {
     const appointments = await prisma.appointment.findMany({
       where: {
         appointmentDate: {
-          gte: new Date(today.setHours(0,  0,  0,   0)),
-          lte: new Date(today.setHours(23, 59, 59, 999)),
+          gte: new Date(new Date(today).setHours(0,  0,  0,   0)),
+          lte: new Date(new Date(today).setHours(23, 59, 59, 999)),
         }
       },
       orderBy: { appointmentDate: 'asc' },
       include: {
-        patient: {
-          select: {
-            id: true, patientId: true, fullName: true,
-            phone: true, gender: true, dateOfBirth: true
-          }
-        },
-        doctor: {
-          select: { id: true, name: true, specialization: true }
-        }
+        patient: { select: PATIENT_SELECT },
+        doctor:  { select: DOCTOR_SELECT }
       }
     })
 
-    // Stats
     const stats = {
       total:     appointments.length,
       scheduled: appointments.filter(a => a.status === 'SCHEDULED').length,
@@ -173,44 +166,35 @@ router.get('/today', async (req, res) => {
   }
 })
 
+// ── GET /:id — Single appointment ───────────────────────────
 router.get('/:id', async (req, res) => {
   try {
-    const prisma = getPrisma()
+    const prisma      = getPrisma()
     const appointment = await prisma.appointment.findUnique({
-      where: { id: req.params.id },
+      where:   { id: req.params.id },
       include: {
-        patient: {
-          select: {
-            id: true, patientId: true, fullName: true,
-            phone: true, gender: true, dateOfBirth: true,
-            address: true, bloodGroup: true,
-          }
-        },
-        doctor: {
-          select: { id: true, name: true, specialization: true, email: true }
-        },
-        createdBy: {
-          select: { id: true, name: true }
-        }
+        patient:   { select: { ...PATIENT_SELECT, address: true, bloodGroup: true } },
+        doctor:    { select: DOCTOR_SELECT },
+        createdBy: { select: CREATED_BY_SELECT }
       }
     })
 
     if (!appointment) return sendError(res, 404, 'Appointment not found')
-
     return sendResponse(res, 200, 'Appointment fetched', { appointment })
   } catch (error) {
     return sendError(res, 500, 'Failed to fetch appointment', error.message)
   }
 })
 
+// ── PATCH /:id/status — Update status ───────────────────────
 router.patch('/:id/status', async (req, res) => {
   try {
     const prisma = getPrisma()
     const { status, notes, cancelReason } = req.body
 
     const validStatuses = [
-      'SCHEDULED','CONFIRMED','IN_PROGRESS',
-      'COMPLETED','CANCELLED','NO_SHOW','RESCHEDULED'
+      'SCHEDULED', 'CONFIRMED', 'IN_PROGRESS',
+      'COMPLETED', 'CANCELLED', 'NO_SHOW', 'RESCHEDULED'
     ]
     if (!validStatuses.includes(status)) {
       return sendError(res, 400, `Invalid status. Must be one of: ${validStatuses.join(', ')}`)
@@ -225,31 +209,27 @@ router.patch('/:id/status', async (req, res) => {
         updatedAt:    new Date(),
       },
       include: {
-        patient: {
-          select: { id: true, patientId: true, fullName: true, phone: true }
-        },
-        doctor: {
-          select: { id: true, name: true }
-        }
+        patient: { select: PATIENT_SELECT },
+        doctor:  { select: DOCTOR_SELECT }
       }
     })
 
-    // Notify doctor of status change
     const io = req.app.get('io')
     if (io && appointment.doctorId) {
       io.to(`user:${appointment.doctorId}`).emit('appointment:updated', {
         appointmentId: appointment.id,
         status,
-        patientName:   appointment.patient?.fullName,
+        patientName: `${appointment.patient?.firstName} ${appointment.patient?.lastName}`,
       })
     }
 
     return sendResponse(res, 200, 'Appointment status updated', { appointment })
   } catch (error) {
-    return sendError(res, 500, 'Failed to update appointment', error.message)
+    return sendError(res, 500, 'Failed to update appointment status', error.message)
   }
 })
 
+// ── PUT /:id — Reschedule ────────────────────────────────────
 router.put('/:id', async (req, res) => {
   try {
     const prisma = getPrisma()
@@ -266,17 +246,13 @@ router.put('/:id', async (req, res) => {
         appointmentTime: appointmentTime || undefined,
         reason:          reason          || undefined,
         notes:           notes           || undefined,
-        type:            type            || undefined,
+        appointmentType: type            || undefined,
         status:          'RESCHEDULED',
         updatedAt:       new Date(),
       },
       include: {
-        patient: {
-          select: { id: true, patientId: true, fullName: true, phone: true }
-        },
-        doctor: {
-          select: { id: true, name: true }
-        }
+        patient: { select: PATIENT_SELECT },
+        doctor:  { select: DOCTOR_SELECT }
       }
     })
 
@@ -286,6 +262,7 @@ router.put('/:id', async (req, res) => {
   }
 })
 
+// ── DELETE /:id — Cancel ─────────────────────────────────────
 router.delete('/:id', async (req, res) => {
   try {
     const prisma = getPrisma()
