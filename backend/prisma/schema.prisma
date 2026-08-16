@@ -326,19 +326,23 @@ model Appointment {
   id              String            @id @default(uuid())
   appointmentNo   String            @unique
   patientId       String
-  doctorId        String
+  doctorId        String?
   appointmentDate DateTime
-  appointmentTime String
+  appointmentTime String?
+  appointmentType String            @default("OPD")
   reason          String?
   status          AppointmentStatus @default(SCHEDULED)
   notes           String?
+  cancelReason    String?
+  createdById     String?
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
   patient         Patient           @relation(fields: [patientId], references: [id])
+  doctor          User?             @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  createdBy       User?             @relation("AppointmentCreatedBy", fields: [createdById], references: [id])
 
   @@map("appointments")
 }
-
 model Admission {
   id                        String                     @id @default(uuid())
   admissionNumber           String                     @unique
