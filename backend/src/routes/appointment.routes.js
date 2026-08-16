@@ -1,15 +1,15 @@
-﻿// backend/src/routes/appointments.routes.js
+﻿// backend/src/routes/appointment.routes.js
 const express = require('express')
 const router  = express.Router()
 const auth    = require('../middleware/auth.middleware')
 const { generateAppointmentNo } = require('../services/id-generator.service')
-const { sendResponse, sendError } = require('../utils/response.utils')
+const { sendSuccess, sendError } = require('../utils/response.utils')
 
 const getPrisma = () => global.prisma
 
 router.use(auth)
 
-// ── Patient & Doctor select helpers ─────────────────────────
+// ── Select helpers ───────────────────────────────────────────
 const PATIENT_SELECT = {
   id: true, mrn: true,
   firstName: true, lastName: true,
@@ -34,8 +34,8 @@ router.post('/', async (req, res) => {
       appointmentTime, reason, notes, type
     } = req.body
 
-    if (!patientId)       return sendError(res, 400, 'Patient ID is required')
-    if (!appointmentDate) return sendError(res, 400, 'Appointment date is required')
+    if (!patientId)       return sendError(res, 'Patient ID is required', 400)
+    if (!appointmentDate) return sendError(res, 'Appointment date is required', 400)
 
     const appointmentNo = await generateAppointmentNo()
 
@@ -59,7 +59,6 @@ router.post('/', async (req, res) => {
       }
     })
 
-    // Notify doctor via Socket.IO
     const io = req.app.get('io')
     if (io && doctorId) {
       io.to(`user:${doctorId}`).emit('appointment:new', {
@@ -70,10 +69,10 @@ router.post('/', async (req, res) => {
       })
     }
 
-    return sendResponse(res, 201, 'Appointment scheduled successfully', { appointment })
+    return sendSuccess(res, { appointment }, 'Appointment scheduled successfully', 201)
   } catch (error) {
     console.error('Create appointment error:', error)
-    return sendError(res, 500, 'Failed to create appointment', error.message)
+    return sendError(res, 'Failed to create appointment: ' + error.message, 500)
   }
 })
 
@@ -89,9 +88,9 @@ router.get('/', async (req, res) => {
     const skip  = (parseInt(page) - 1) * parseInt(limit)
     const where = {}
 
-    if (doctorId)  where.doctorId       = doctorId
-    if (patientId) where.patientId      = patientId
-    if (status)    where.status         = status
+    if (doctorId)  where.doctorId        = doctorId
+    if (patientId) where.patientId       = patientId
+    if (status)    where.status          = status
     if (type)      where.appointmentType = type
 
     if (date) {
@@ -116,7 +115,7 @@ router.get('/', async (req, res) => {
       prisma.appointment.count({ where })
     ])
 
-    return sendResponse(res, 200, 'Appointments fetched', {
+    return sendSuccess(res, {
       appointments,
       pagination: {
         page:  parseInt(page),
@@ -124,10 +123,10 @@ router.get('/', async (req, res) => {
         total,
         pages: Math.ceil(total / parseInt(limit)),
       }
-    })
+    }, 'Appointments fetched')
   } catch (error) {
     console.error('Fetch appointments error:', error)
-    return sendError(res, 500, 'Failed to fetch appointments', error.message)
+    return sendError(res, 'Failed to fetch appointments: ' + error.message, 500)
   }
 })
 
@@ -160,9 +159,9 @@ router.get('/today', async (req, res) => {
       noShow:    appointments.filter(a => a.status === 'NO_SHOW').length,
     }
 
-    return sendResponse(res, 200, "Today's appointments", { appointments, stats })
+    return sendSuccess(res, { appointments, stats }, "Today's appointments")
   } catch (error) {
-    return sendError(res, 500, "Failed to fetch today's appointments", error.message)
+    return sendError(res, "Failed to fetch today's appointments: " + error.message, 500)
   }
 })
 
@@ -179,10 +178,10 @@ router.get('/:id', async (req, res) => {
       }
     })
 
-    if (!appointment) return sendError(res, 404, 'Appointment not found')
-    return sendResponse(res, 200, 'Appointment fetched', { appointment })
+    if (!appointment) return sendError(res, 'Appointment not found', 404)
+    return sendSuccess(res, { appointment }, 'Appointment fetched')
   } catch (error) {
-    return sendError(res, 500, 'Failed to fetch appointment', error.message)
+    return sendError(res, 'Failed to fetch appointment: ' + error.message, 500)
   }
 })
 
@@ -197,7 +196,7 @@ router.patch('/:id/status', async (req, res) => {
       'COMPLETED', 'CANCELLED', 'NO_SHOW', 'RESCHEDULED'
     ]
     if (!validStatuses.includes(status)) {
-      return sendError(res, 400, `Invalid status. Must be one of: ${validStatuses.join(', ')}`)
+      return sendError(res, `Invalid status. Must be one of: ${validStatuses.join(', ')}`, 400)
     }
 
     const appointment = await prisma.appointment.update({
@@ -223,9 +222,9 @@ router.patch('/:id/status', async (req, res) => {
       })
     }
 
-    return sendResponse(res, 200, 'Appointment status updated', { appointment })
+    return sendSuccess(res, { appointment }, 'Appointment status updated')
   } catch (error) {
-    return sendError(res, 500, 'Failed to update appointment status', error.message)
+    return sendError(res, 'Failed to update appointment status: ' + error.message, 500)
   }
 })
 
@@ -256,9 +255,9 @@ router.put('/:id', async (req, res) => {
       }
     })
 
-    return sendResponse(res, 200, 'Appointment rescheduled', { appointment })
+    return sendSuccess(res, { appointment }, 'Appointment rescheduled')
   } catch (error) {
-    return sendError(res, 500, 'Failed to reschedule appointment', error.message)
+    return sendError(res, 'Failed to reschedule appointment: ' + error.message, 500)
   }
 })
 
@@ -270,9 +269,9 @@ router.delete('/:id', async (req, res) => {
       where: { id: req.params.id },
       data:  { status: 'CANCELLED', updatedAt: new Date() }
     })
-    return sendResponse(res, 200, 'Appointment cancelled')
+    return sendSuccess(res, {}, 'Appointment cancelled')
   } catch (error) {
-    return sendError(res, 500, 'Failed to cancel appointment', error.message)
+    return sendError(res, 'Failed to cancel appointment: ' + error.message, 500)
   }
 })
 
