@@ -117,27 +117,43 @@ export default function DoctorQueue() {
     }
   }
 
-  const fetchMyAppointments = async () => {
-    try {
-      const today = new Date().toISOString().split("T")[0]
-      // Fetch appointments for today assigned to this doctor
-      const res = await api.get(`/appointments?date=${today}&doctorId=${user?.id}&limit=100`)
-      const list = res.data.data?.appointments || res.data.data || []
-      // Sort by appointmentTime
-      const sorted = Array.isArray(list) ? [...list].sort((a, b) => {
-        const ta = a.appointmentTime || "00:00"
-        const tb = b.appointmentTime || "00:00"
-        return ta.localeCompare(tb)
-      }) : []
-      setAppointments(sorted)
-    } catch (e) {
-      console.error("fetchMyAppointments error:", e)
-      setAppointments([])
-    } finally {
-      setApptLoading(false)
-    }
-  }
+const fetchMyAppointments = async () => {
+  try {
+    const today  = new Date().toISOString().split("T")[0]
+    
+    // Get user from store directly — don't rely on closure
+    const stored = localStorage.getItem('steverest-hims-auth')
+    const doctorId = stored 
+      ? JSON.parse(stored)?.state?.user?.id 
+      : user?.id
 
+    if (!doctorId) {
+      console.warn("No doctorId found — skipping appointments fetch")
+      setAppointments([])
+      setApptLoading(false)
+      return
+    }
+
+    console.log("Fetching appointments for doctorId:", doctorId)
+
+    const res  = await api.get(`/appointments?date=${today}&doctorId=${doctorId}&limit=100`)
+    
+    console.log("Appointments response:", res.data)
+    
+    const list = res.data.data?.appointments || res.data.data || []
+    const sorted = Array.isArray(list) ? [...list].sort((a, b) => {
+      const ta = a.appointmentTime || "00:00"
+      const tb = b.appointmentTime || "00:00"
+      return ta.localeCompare(tb)
+    }) : []
+    setAppointments(sorted)
+  } catch (e) {
+    console.error("fetchMyAppointments error:", e)
+    setAppointments([])
+  } finally {
+    setApptLoading(false)
+  }
+}
   // ── Stats ──────────────────────────────────────────────────────────────────
   const pending    = visits.filter(v => ["WAITING","TRIAGED","VITALS_DONE","REGISTERED"].includes(v.status)).length
   const inProgress = visits.filter(v => ["WITH_DOCTOR","IN_CONSULTATION","AWAITING_LAB","LAB_PENDING"].includes(v.status)).length
