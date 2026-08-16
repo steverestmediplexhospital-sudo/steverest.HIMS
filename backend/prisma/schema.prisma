@@ -9,34 +9,36 @@ datasource db {
 }
 
 model User {
-  id                  String              @id @default(uuid())
-  employeeId          String              @unique
-  firstName           String
-  lastName            String
-  email               String              @unique
-  phone               String
-  passwordHash        String
-  role                Role
-  departmentId        String?
-  status              UserStatus          @default(ACTIVE)
-  avatar              String?
-  isNurseInCharge     Boolean             @default(false)
-  lastLogin           DateTime?
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
-  auditLogs           AuditLog[]
-  doctorConsultations Consultation[]      @relation("DoctorConsultations")
-  labResults          LabResult[]         @relation("ValidatedBy")
-  notifications       Notification[]
-  nurseAssessments    NursingAssessment[]
-  paymentSlips        PaymentSlip[]       @relation("CreatedByUser")
-  payments            Payment[]           @relation("ProcessedByUser")
-  prescriptions       Prescription[]      @relation("PrescribedBy")
-  radiologyReports    RadiologyReport[]   @relation("ReportedBy")
-  refreshTokens       RefreshToken[]
-  surgeries           Surgery[]           @relation("SurgeonSurgeries")
-  department          Department?         @relation(fields: [departmentId], references: [id])
-  nurseShifts         NurseShift[]        @relation("NurseShifts")
+  id                   String              @id @default(uuid())
+  employeeId           String              @unique
+  firstName            String
+  lastName             String
+  email                String              @unique
+  phone                String
+  passwordHash         String
+  role                 Role
+  departmentId         String?
+  status               UserStatus          @default(ACTIVE)
+  avatar               String?
+  isNurseInCharge      Boolean             @default(false)
+  lastLogin            DateTime?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  auditLogs            AuditLog[]
+  doctorConsultations  Consultation[]      @relation("DoctorConsultations")
+  labResults           LabResult[]         @relation("ValidatedBy")
+  notifications        Notification[]
+  nurseAssessments     NursingAssessment[]
+  paymentSlips         PaymentSlip[]       @relation("CreatedByUser")
+  payments             Payment[]           @relation("ProcessedByUser")
+  prescriptions        Prescription[]      @relation("PrescribedBy")
+  radiologyReports     RadiologyReport[]   @relation("ReportedBy")
+  refreshTokens        RefreshToken[]
+  surgeries            Surgery[]           @relation("SurgeonSurgeries")
+  department           Department?         @relation(fields: [departmentId], references: [id])
+  nurseShifts          NurseShift[]        @relation("NurseShifts")
+  appointmentsAsDoctor Appointment[]       @relation("DoctorAppointments")
+  appointmentsCreated  Appointment[]       @relation("AppointmentCreatedBy")
 
   @@map("users")
 }
@@ -127,7 +129,7 @@ model Patient {
   occupation        String?
   maritalStatus     String?
   religion          String?
-  nationality       String             @default("Kenyan")
+  nationality       String             @default("Nigerian")
   patientType       PatientType        @default(OUTPATIENT)
   photo             String?
   isActive          Boolean            @default(true)
@@ -343,6 +345,7 @@ model Appointment {
 
   @@map("appointments")
 }
+
 model Admission {
   id                        String                     @id @default(uuid())
   admissionNumber           String                     @unique
@@ -826,37 +829,37 @@ model NewbornRecord {
 }
 
 model FacilityAsset {
-  id             String   @id @default(cuid())
-  assetCode      String   @unique
-  name           String
-  category       String
-  serialNumber   String?
-  location       String
-  manufacturer   String?
-  model          String?
-  purchaseDate   DateTime?
-  purchaseCost   Float?
-  warrantyExpiry DateTime?
-  status         String   @default("OPERATIONAL")
-  notes          String?
-  isActive       Boolean  @default(true)
-  createdById    String?
-  updatedById    String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                  String               @id @default(cuid())
+  assetCode           String               @unique
+  name                String
+  category            String
+  serialNumber        String?
+  location            String
+  manufacturer        String?
+  model               String?
+  purchaseDate        DateTime?
+  purchaseCost        Float?
+  warrantyExpiry      DateTime?
+  status              String               @default("OPERATIONAL")
+  notes               String?
+  isActive            Boolean              @default(true)
+  createdById         String?
+  updatedById         String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
   maintenanceRequests MaintenanceRequest[]
 
   @@map("facility_assets")
 }
 
 model MaintenanceRequest {
-  id            String    @id @default(cuid())
-  requestNumber String    @unique
+  id            String         @id @default(cuid())
+  requestNumber String         @unique
   assetId       String?
   title         String
   description   String
-  priority      String    @default("MEDIUM")
-  status        String    @default("PENDING")
+  priority      String         @default("MEDIUM")
+  status        String         @default("PENDING")
   scheduledDate DateTime?
   assignedTo    String?
   estimatedCost Float?
@@ -865,8 +868,8 @@ model MaintenanceRequest {
   notes         String?
   requestedById String?
   updatedById   String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   asset         FacilityAsset? @relation(fields: [assetId], references: [id])
 
   @@map("maintenance_requests")
