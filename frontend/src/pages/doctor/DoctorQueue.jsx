@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import api from "../../services/api"
+import useAuthStore from "../../store/authStore"
 import {
   Search, RefreshCw, User, Clock, ChevronRight,
   Activity, Users, CheckCircle, Stethoscope,
   AlertTriangle, Timer, Heart, Wind, Thermometer,
-  ArrowLeft, Eye
+  ArrowLeft, Eye, Calendar, Bell
 } from "lucide-react"
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -29,6 +30,15 @@ const STATUS_COLOR = {
   CONSULTATION_DONE: "bg-green-100 text-green-700",
   COMPLETED:         "bg-teal-100 text-teal-700",
   REFERRED:          "bg-red-100 text-red-700",
+}
+
+const APPT_STATUS_COLOR = {
+  SCHEDULED:  "bg-blue-100 text-blue-700",
+  CONFIRMED:  "bg-green-100 text-green-700",
+  CHECKED_IN: "bg-purple-100 text-purple-700",
+  COMPLETED:  "bg-teal-100 text-teal-700",
+  CANCELLED:  "bg-red-100 text-red-700",
+  NO_SHOW:    "bg-gray-100 text-gray-500",
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -65,15 +75,24 @@ const StatCard = ({ label, value, icon: Icon, color, bg }) => (
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function DoctorQueue() {
-  const navigate = useNavigate()
-  const [visits,  setVisits]  = useState([])
-  const [loading, setLoading] = useState(true)
-  const [search,  setSearch]  = useState("")
-  const [filter,  setFilter]  = useState("PENDING")
+  const navigate     = useNavigate()
+  const { user }     = useAuthStore()
+
+  const [visits,       setVisits]       = useState([])
+  const [appointments, setAppointments] = useState([])
+  const [loading,      setLoading]      = useState(true)
+  const [apptLoading,  setApptLoading]  = useState(true)
+  const [search,       setSearch]       = useState("")
+  const [filter,       setFilter]       = useState("PENDING")
+  const [activeTab,    setActiveTab]    = useState("queue") // "queue" | "appointments"
 
   useEffect(() => {
     fetchQueue()
-    const t = setInterval(fetchQueue, 20000)
+    fetchMyAppointments()
+    const t = setInterval(() => {
+      fetchQueue()
+      fetchMyAppointments()
+    }, 20000)
     return () => clearInterval(t)
   }, [])
 
@@ -82,7 +101,6 @@ export default function DoctorQueue() {
       const today = new Date().toISOString().split("T")[0]
       const res   = await api.get(`/visits?date=${today}&limit=200`)
       const list  = res.data.data?.visits || res.data.data || res.data.visits || []
-      // Sort: IMMEDIATE first, then by wait time
       const sorted = Array.isArray(list) ? [...list].sort((a, b) => {
         const order = { IMMEDIATE: 0, URGENT: 1, LESS_URGENT: 2, NON_URGENT: 3 }
         const pa = a.triage?.[0]?.priority || a.triageLevel
@@ -99,16 +117,38 @@ export default function DoctorQueue() {
     }
   }
 
+  const fetchMyAppointments = async () => {
+    try {
+      const today = new Date().toISOString().split("T")[0]
+      // Fetch appointments for today assigned to this doctor
+      const res = await api.get(`/appointments?date=${today}&doctorId=${user?.id}&limit=100`)
+      const list = res.data.data?.appointments || res.data.data || []
+      // Sort by appointmentTime
+      const sorted = Array.isArray(list) ? [...list].sort((a, b) => {
+        const ta = a.appointmentTime || "00:00"
+        const tb = b.appointmentTime || "00:00"
+        return ta.localeCompare(tb)
+      }) : []
+      setAppointments(sorted)
+    } catch (e) {
+      console.error("fetchMyAppointments error:", e)
+      setAppointments([])
+    } finally {
+      setApptLoading(false)
+    }
+  }
+
   // ── Stats ──────────────────────────────────────────────────────────────────
   const pending    = visits.filter(v => ["WAITING","TRIAGED","VITALS_DONE","REGISTERED"].includes(v.status)).length
   const inProgress = visits.filter(v => ["WITH_DOCTOR","IN_CONSULTATION","AWAITING_LAB","LAB_PENDING"].includes(v.status)).length
   const completed  = visits.filter(v => ["CONSULTATION_DONE","COMPLETED","PHARMACY"].includes(v.status)).length
   const total      = visits.length
+  const myAppts    = appointments.filter(a => !["CANCELLED","NO_SHOW"].includes(a.status)).length
 
-  // ── Filter ─────────────────────────────────────────────────────────────────
+  // ── Filter visits ──────────────────────────────────────────────────────────
   const filtered = visits.filter(v => {
     const name = `${v.patient?.firstName || ""} ${v.patient?.lastName || ""}`.toLowerCase()
-    const id   = (v.patient?.mrn || v.patient?.patientNumber || "").toLowerCase()
+    const id   = (v.patient?.mrn || "").toLowerCase()
     const matchSearch = !search || name.includes(search.toLowerCase()) || id.includes(search.toLowerCase())
     const matchFilter =
       filter === "ALL" ||
@@ -141,11 +181,12 @@ export default function DoctorQueue() {
             <div>
               <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2">
                 <Stethoscope className="w-5 h-5 text-blue-600" />
-                Patient Queue
+                OPD Queue
               </h1>
               <p className="text-xs text-gray-400 mt-0.5">
                 {new Date().toLocaleDateString("en-NG", {
-                  weekday: "long", day: "numeric", month: "long", year: "numeric"
+                  weekday: "long", day: "numeric",
+                  month: "long", year: "numeric"
                 })}
               </p>
             </div>
@@ -154,10 +195,10 @@ export default function DoctorQueue() {
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5 text-xs text-gray-400 bg-white border border-gray-200 px-3 py-2 rounded-xl">
               <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-              Auto-refresh 20s
+              Live · refreshes every 20s
             </div>
             <button
-              onClick={() => { setLoading(true); fetchQueue() }}
+              onClick={() => { setLoading(true); fetchQueue(); fetchMyAppointments() }}
               className="p-2.5 rounded-xl border border-gray-200 hover:bg-gray-50 text-gray-500 transition-colors"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -166,212 +207,376 @@ export default function DoctorQueue() {
         </div>
 
         {/* ── Stats ── */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <StatCard label="Total Today"  value={total}      icon={Users}       color="text-blue-700"    bg="bg-blue-50"    />
-          <StatCard label="Pending"      value={pending}    icon={Clock}       color="text-amber-700"   bg="bg-amber-50"   />
-          <StatCard label="In Progress"  value={inProgress} icon={Activity}    color="text-purple-700"  bg="bg-purple-50"  />
-          <StatCard label="Completed"    value={completed}  icon={CheckCircle} color="text-emerald-700" bg="bg-emerald-50" />
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+          <StatCard label="Total Today"   value={total}      icon={Users}       color="text-blue-700"    bg="bg-blue-50"    />
+          <StatCard label="Pending"       value={pending}    icon={Clock}       color="text-amber-700"   bg="bg-amber-50"   />
+          <StatCard label="In Progress"   value={inProgress} icon={Activity}    color="text-purple-700"  bg="bg-purple-50"  />
+          <StatCard label="Completed"     value={completed}  icon={CheckCircle} color="text-emerald-700" bg="bg-emerald-50" />
+          <StatCard label="My Appts"      value={myAppts}    icon={Calendar}    color="text-teal-700"    bg="bg-teal-50"    />
         </div>
 
-        {/* ── Search + Filter ── */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-4">
-          <div className="flex flex-col sm:flex-row gap-3">
-            {/* Search */}
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search by patient name or ID…"
-                className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            {/* Filter tabs */}
-            <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
-              {FILTERS.map(f => (
-                <button
-                  key={f.key}
-                  onClick={() => setFilter(f.key)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    filter === f.key
-                      ? "bg-white text-blue-700 shadow-sm"
-                      : "text-gray-500 hover:text-gray-700"
-                  }`}
-                >
-                  {f.label}
-                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
-                    filter === f.key ? "bg-blue-100 text-blue-700" : "bg-gray-200 text-gray-500"
-                  }`}>
-                    {f.count}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
+        {/* ── Tab Switch ── */}
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={() => setActiveTab("queue")}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+              activeTab === "queue"
+                ? "bg-blue-600 text-white shadow-sm"
+                : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            OPD Walk-ins
+            <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
+              activeTab === "queue" ? "bg-white/20 text-white" : "bg-gray-100 text-gray-600"
+            }`}>{total}</span>
+          </button>
+          <button
+            onClick={() => setActiveTab("appointments")}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+              activeTab === "appointments"
+                ? "bg-teal-600 text-white shadow-sm"
+                : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
+            }`}
+          >
+            <Calendar className="w-4 h-4" />
+            My Appointments
+            {myAppts > 0 && (
+              <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
+                activeTab === "appointments" ? "bg-white/20 text-white" : "bg-teal-100 text-teal-700"
+              }`}>{myAppts}</span>
+            )}
+          </button>
         </div>
 
-        {/* ── Queue List ── */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          {loading ? (
-            <div className="divide-y divide-gray-50">
-              {[...Array(6)].map((_, i) => (
-                <div key={i} className="p-4 animate-pulse flex gap-4">
-                  <div className="w-10 h-10 bg-gray-200 rounded-full shrink-0" />
-                  <div className="flex-1 space-y-2">
-                    <div className="h-4 bg-gray-200 rounded w-1/3" />
-                    <div className="h-3 bg-gray-100 rounded w-1/2" />
-                  </div>
-                  <div className="w-20 h-8 bg-gray-100 rounded-lg" />
+        {/* ══════════════════════════════════════════════════════
+            TAB 1 — OPD WALK-IN QUEUE
+        ══════════════════════════════════════════════════════ */}
+        {activeTab === "queue" && (
+          <>
+            {/* Search + Filter */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-4">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    placeholder="Search by patient name or MRN…"
+                    className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
                 </div>
-              ))}
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
-                <User className="w-8 h-8 text-gray-300" />
+                <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+                  {FILTERS.map(f => (
+                    <button
+                      key={f.key}
+                      onClick={() => setFilter(f.key)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        filter === f.key
+                          ? "bg-white text-blue-700 shadow-sm"
+                          : "text-gray-500 hover:text-gray-700"
+                      }`}
+                    >
+                      {f.label}
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
+                        filter === f.key ? "bg-blue-100 text-blue-700" : "bg-gray-200 text-gray-500"
+                      }`}>{f.count}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
-              <p className="font-semibold text-gray-500">No patients found</p>
-              <p className="text-sm text-gray-400 mt-1">
-                {filter === "PENDING"
-                  ? "No patients waiting for consultation"
-                  : "Try changing the filter or search"}
-              </p>
             </div>
-          ) : (
-            <div className="divide-y divide-gray-50">
-              {filtered.map((visit, idx) => {
-                const vital    = visit.vitalSigns?.[0]
-                const triage   = visit.triage?.[0]
-                const priority = triage?.priority || visit.triageLevel
-                const isUrgent = ["IMMEDIATE","URGENT"].includes(priority)
 
-                return (
-                  <div
-                    key={visit.id}
-                    className={`p-4 hover:bg-gray-50 transition-colors ${
-                      priority === "IMMEDIATE" ? "border-l-4 border-red-400" :
-                      priority === "URGENT"    ? "border-l-4 border-orange-400" : ""
-                    }`}
-                  >
-                    <div className="flex items-start gap-4">
-
-                      {/* Queue Number */}
-                      <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
-                        isUrgent ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"
-                      }`}>
-                        {idx + 1}
+            {/* Queue List */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              {loading ? (
+                <div className="divide-y divide-gray-50">
+                  {[...Array(6)].map((_, i) => (
+                    <div key={i} className="p-4 animate-pulse flex gap-4">
+                      <div className="w-10 h-10 bg-gray-200 rounded-full shrink-0" />
+                      <div className="flex-1 space-y-2">
+                        <div className="h-4 bg-gray-200 rounded w-1/3" />
+                        <div className="h-3 bg-gray-100 rounded w-1/2" />
                       </div>
+                      <div className="w-20 h-8 bg-gray-100 rounded-lg" />
+                    </div>
+                  ))}
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center">
+                  <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+                    <User className="w-8 h-8 text-gray-300" />
+                  </div>
+                  <p className="font-semibold text-gray-500">No patients found</p>
+                  <p className="text-sm text-gray-400 mt-1">
+                    {filter === "PENDING"
+                      ? "No patients waiting for consultation"
+                      : "Try changing the filter or search"}
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-50">
+                  {filtered.map((visit, idx) => {
+                    const vital    = visit.vitalSigns?.[0]
+                    const triage   = visit.triage?.[0]
+                    const priority = triage?.priority || visit.triageLevel
+                    const isUrgent = ["IMMEDIATE","URGENT"].includes(priority)
 
-                      {/* Patient Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-2 mb-1">
-                          <p className="font-semibold text-gray-800 text-sm">
-                            {visit.patient?.firstName} {visit.patient?.lastName}
-                          </p>
-                          <span className="text-xs text-gray-400">
-                            {visit.patient?.mrn || visit.patient?.patientNumber}
-                          </span>
-                          <span className="text-xs text-gray-400">
-                            · {calcAge(visit.patient?.dateOfBirth)} · {visit.patient?.gender}
-                          </span>
-                          {priority && (
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TRIAGE_COLOR[priority] || "bg-gray-100 text-gray-600"}`}>
-                              {priority.replace("_", " ")}
+                    return (
+                      <div
+                        key={visit.id}
+                        className={`p-4 hover:bg-gray-50 transition-colors ${
+                          priority === "IMMEDIATE" ? "border-l-4 border-red-400" :
+                          priority === "URGENT"    ? "border-l-4 border-orange-400" : ""
+                        }`}
+                      >
+                        <div className="flex items-start gap-4">
+                          <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
+                            isUrgent ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"
+                          }`}>
+                            {idx + 1}
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2 mb-1">
+                              <p className="font-semibold text-gray-800 text-sm">
+                                {visit.patient?.firstName} {visit.patient?.lastName}
+                              </p>
+                              <span className="text-xs text-gray-400">
+                                {visit.patient?.mrn}
+                              </span>
+                              <span className="text-xs text-gray-400">
+                                · {calcAge(visit.patient?.dateOfBirth)} · {visit.patient?.gender}
+                              </span>
+                              {priority && (
+                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TRIAGE_COLOR[priority] || "bg-gray-100 text-gray-600"}`}>
+                                  {priority.replace("_", " ")}
+                                </span>
+                              )}
+                            </div>
+
+                            {visit.chiefComplaint && (
+                              <p className="text-xs text-gray-500 mb-1.5 bg-gray-50 rounded-lg px-2 py-1 inline-block">
+                                💬 {visit.chiefComplaint}
+                              </p>
+                            )}
+
+                            {vital && (
+                              <div className="flex flex-wrap gap-2 mt-1">
+                                {vital.bloodPressureSystolic && (
+                                  <span className="flex items-center gap-1 text-xs text-gray-500 bg-blue-50 px-2 py-0.5 rounded-lg">
+                                    <Activity className="w-3 h-3 text-blue-400" />
+                                    {vital.bloodPressureSystolic}/{vital.bloodPressureDiastolic}
+                                  </span>
+                                )}
+                                {vital.pulse && (
+                                  <span className="flex items-center gap-1 text-xs text-gray-500 bg-pink-50 px-2 py-0.5 rounded-lg">
+                                    <Heart className="w-3 h-3 text-pink-400" />
+                                    {vital.pulse} bpm
+                                  </span>
+                                )}
+                                {vital.temperature && (
+                                  <span className="flex items-center gap-1 text-xs text-gray-500 bg-orange-50 px-2 py-0.5 rounded-lg">
+                                    <Thermometer className="w-3 h-3 text-orange-400" />
+                                    {vital.temperature}°C
+                                  </span>
+                                )}
+                                {vital.oxygenSaturation && (
+                                  <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg ${
+                                    vital.oxygenSaturation < 95
+                                      ? "bg-red-50 text-red-600 font-semibold"
+                                      : "bg-teal-50 text-gray-500"
+                                  }`}>
+                                    <Wind className="w-3 h-3 text-teal-400" />
+                                    {vital.oxygenSaturation}%
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
+                            <div className="flex items-center gap-3 mt-1.5">
+                              <span className="text-xs text-gray-400">{visit.visitType || "OPD"}</span>
+                              <span className="text-xs text-gray-300">·</span>
+                              <span className={`flex items-center gap-1 text-xs ${waitColor(visit.createdAt)}`}>
+                                <Timer className="w-3 h-3" />
+                                Wait: {getWaitTime(visit.createdAt)}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col items-end gap-2 shrink-0">
+                            <span className={`text-xs px-2 py-1 rounded-full font-medium ${STATUS_COLOR[visit.status] || "bg-gray-100 text-gray-600"}`}>
+                              {(visit.status || "REGISTERED").replace(/_/g, " ")}
                             </span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => navigate(`/doctor/patient/${visit.patientId || visit.patient?.id}`)}
+                                className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-400 hover:text-gray-700 transition-colors"
+                                title="View Patient Chart"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => navigate(`/doctor/consult/${visit.id}`)}
+                                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                                  isUrgent
+                                    ? "bg-red-600 text-white hover:bg-red-700"
+                                    : "bg-blue-600 text-white hover:bg-blue-700"
+                                }`}
+                              >
+                                Consult <ChevronRight className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ══════════════════════════════════════════════════════
+            TAB 2 — MY APPOINTMENTS
+        ══════════════════════════════════════════════════════ */}
+        {activeTab === "appointments" && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            {apptLoading ? (
+              <div className="divide-y divide-gray-50">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className="p-4 animate-pulse flex gap-4">
+                    <div className="w-14 h-14 bg-gray-200 rounded-xl shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-4 bg-gray-200 rounded w-1/3" />
+                      <div className="h-3 bg-gray-100 rounded w-1/2" />
+                      <div className="h-3 bg-gray-100 rounded w-1/4" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : appointments.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <div className="w-16 h-16 bg-teal-50 rounded-full flex items-center justify-center mb-4">
+                  <Calendar className="w-8 h-8 text-teal-300" />
+                </div>
+                <p className="font-semibold text-gray-500">No appointments today</p>
+                <p className="text-sm text-gray-400 mt-1">
+                  Appointments booked for you will appear here
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {appointments.map((appt, idx) => {
+                  const isCancelled = ["CANCELLED","NO_SHOW"].includes(appt.status)
+                  const isNow = (() => {
+                    if (!appt.appointmentTime) return false
+                    const [h, m]  = appt.appointmentTime.split(":").map(Number)
+                    const apptMin = h * 60 + m
+                    const nowMin  = new Date().getHours() * 60 + new Date().getMinutes()
+                    return Math.abs(apptMin - nowMin) <= 30
+                  })()
+
+                  return (
+                    <div
+                      key={appt.id}
+                      className={`p-4 hover:bg-gray-50 transition-colors ${
+                        isCancelled ? "opacity-50" : ""
+                      } ${isNow ? "border-l-4 border-teal-400 bg-teal-50/30" : ""}`}
+                    >
+                      <div className="flex items-start gap-4">
+
+                        {/* Time Block */}
+                        <div className={`flex-shrink-0 w-16 text-center rounded-xl py-2 px-1 ${
+                          isNow ? "bg-teal-600 text-white" : "bg-gray-100"
+                        }`}>
+                          <p className={`text-lg font-bold leading-none ${isNow ? "text-white" : "text-gray-700"}`}>
+                            {appt.appointmentTime || "—"}
+                          </p>
+                          {isNow && (
+                            <p className="text-xs text-teal-200 mt-1 font-medium">NOW</p>
                           )}
                         </div>
 
-                        {/* Chief Complaint */}
-                        {visit.chiefComplaint && (
-                          <p className="text-xs text-gray-500 mb-1.5 bg-gray-50 rounded-lg px-2 py-1 inline-block">
-                            💬 {visit.chiefComplaint}
-                          </p>
-                        )}
-
-                        {/* Vitals Strip */}
-                        {vital && (
-                          <div className="flex flex-wrap gap-2 mt-1">
-                            {vital.bloodPressureSystolic && (
-                              <span className="flex items-center gap-1 text-xs text-gray-500 bg-blue-50 px-2 py-0.5 rounded-lg">
-                                <Activity className="w-3 h-3 text-blue-400" />
-                                {vital.bloodPressureSystolic}/{vital.bloodPressureDiastolic}
-                              </span>
-                            )}
-                            {(vital.pulse || vital.heartRate) && (
-                              <span className="flex items-center gap-1 text-xs text-gray-500 bg-pink-50 px-2 py-0.5 rounded-lg">
-                                <Heart className="w-3 h-3 text-pink-400" />
-                                {vital.pulse || vital.heartRate} bpm
-                              </span>
-                            )}
-                            {vital.temperature && (
-                              <span className="flex items-center gap-1 text-xs text-gray-500 bg-orange-50 px-2 py-0.5 rounded-lg">
-                                <Thermometer className="w-3 h-3 text-orange-400" />
-                                {vital.temperature}°C
-                              </span>
-                            )}
-                            {vital.oxygenSaturation && (
-                              <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg ${
-                                vital.oxygenSaturation < 95
-                                  ? "bg-red-50 text-red-600 font-semibold"
-                                  : "bg-teal-50 text-gray-500"
-                              }`}>
-                                <Wind className="w-3 h-3 text-teal-400" />
-                                {vital.oxygenSaturation}%
+                        {/* Patient Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 mb-1">
+                            <p className="font-semibold text-gray-800">
+                              {appt.patient?.firstName} {appt.patient?.lastName}
+                            </p>
+                            <span className="text-xs text-teal-600 font-medium">
+                              {appt.patient?.mrn}
+                            </span>
+                            {appt.patient?.gender && (
+                              <span className="text-xs text-gray-400">
+                                · {calcAge(appt.patient?.dateOfBirth)} · {appt.patient?.gender}
                               </span>
                             )}
                           </div>
-                        )}
 
-                        {/* Visit meta */}
-                        <div className="flex items-center gap-3 mt-1.5">
-                          <span className="text-xs text-gray-400">
-                            {visit.visitType || "OPD"}
-                          </span>
-                          <span className="text-xs text-gray-300">·</span>
-                          <span className={`flex items-center gap-1 text-xs ${waitColor(visit.createdAt)}`}>
-                            <Timer className="w-3 h-3" />
-                            Wait: {getWaitTime(visit.createdAt)}
-                          </span>
+                          {/* Reason */}
+                          {appt.reason && (
+                            <p className="text-xs text-gray-500 mb-1.5 bg-gray-50 rounded-lg px-2 py-1 inline-block">
+                              📋 {appt.reason}
+                            </p>
+                          )}
+
+                          {/* Meta */}
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                              appt.appointmentType === "OPD"       ? "bg-blue-100 text-blue-700"   :
+                              appt.appointmentType === "SPECIALIST" ? "bg-purple-100 text-purple-700":
+                              appt.appointmentType === "FOLLOW_UP" ? "bg-green-100 text-green-700" :
+                              appt.appointmentType === "ANTENATAL" ? "bg-pink-100 text-pink-700"   :
+                              "bg-gray-100 text-gray-600"
+                            }`}>
+                              {appt.appointmentType || "OPD"}
+                            </span>
+                            <span className="text-xs text-gray-400">
+                              Appt #{appt.appointmentNo}
+                            </span>
+                            {appt.patient?.phone && (
+                              <span className="text-xs text-gray-400">
+                                📞 {appt.patient.phone}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
 
-                      {/* Right Side — Status + Actions */}
-                      <div className="flex flex-col items-end gap-2 shrink-0">
-                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${STATUS_COLOR[visit.status] || "bg-gray-100 text-gray-600"}`}>
-                          {(visit.status || "REGISTERED").replace(/_/g, " ")}
-                        </span>
-
-                        <div className="flex items-center gap-1.5">
-                          {/* View Chart */}
-                          <button
-                            onClick={() => navigate(`/doctor/patient/${visit.patientId || visit.patient?.id}`)}
-                            className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-400 hover:text-gray-700 transition-colors"
-                            title="View Patient Chart"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                          </button>
-
-                          {/* Consult */}
-                          <button
-                            onClick={() => navigate(`/doctor/consult/${visit.id}`)}
-                            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                              isUrgent
-                                ? "bg-red-600 text-white hover:bg-red-700"
-                                : "bg-blue-600 text-white hover:bg-blue-700"
-                            }`}
-                          >
-                            Consult <ChevronRight className="w-3 h-3" />
-                          </button>
+                        {/* Status + Actions */}
+                        <div className="flex flex-col items-end gap-2 shrink-0">
+                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                            APPT_STATUS_COLOR[appt.status] || "bg-gray-100 text-gray-600"
+                          }`}>
+                            {appt.status}
+                          </span>
+                          {!isCancelled && (
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => navigate(`/doctor/patient/${appt.patientId}`)}
+                                className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-400 hover:text-gray-700 transition-colors"
+                                title="View Chart"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => navigate(`/doctor/patient/${appt.patientId}`)}
+                                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-teal-600 text-white hover:bg-teal-700 transition-colors"
+                              >
+                                See Patient <ChevronRight className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── Immediate Alert Banner ── */}
         {visits.some(v => (v.triage?.[0]?.priority || v.triageLevel) === "IMMEDIATE") && (
