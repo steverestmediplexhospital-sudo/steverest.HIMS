@@ -22,25 +22,22 @@ export default function ReceptionPage() {
 
   useEffect(() => { fetchStats() }, [])
 
-  const fetchStats = async () => {
-    try {
-      const [pRes, vRes] = await Promise.allSettled([
-        api.get("/patients?limit=1"),
-        api.get(`/visits?date=${new Date().toISOString().split("T")[0]}`)
-      ])
-      const visits = vRes.status === "fulfilled"
-        ? vRes.value.data.data?.visits || vRes.value.data.data || []
-        : []
-      setStats({
-        today: visits.length,
-        total: pRes.status === "fulfilled"
-          ? pRes.value.data.data?.meta?.total || pRes.value.data.meta?.total || 0
-          : 0,
-        waiting: visits.filter(v => ["WAITING","TRIAGED"].includes(v.status)).length,
-        appointments: 0
-      })
-    } catch (e) {}
+  const fetchDoctors = async () => {
+  try {
+    const [d1, d2] = await Promise.allSettled([
+      api.get("/admin/users?role=DOCTOR&limit=100"),
+      api.get("/admin/users?role=SURGEON&limit=100")
+    ])
+    const docs  = d1.status === "fulfilled"
+      ? (d1.value.data.data?.users || d1.value.data.data || []) : []
+    const surgs = d2.status === "fulfilled"
+      ? (d2.value.data.data?.users || d2.value.data.data || []) : []
+    setDoctors([...docs, ...surgs])
+    console.log("Doctors loaded:", [...docs, ...surgs].length)
+  } catch (e) {
+    console.error("fetchDoctors error:", e)
   }
+}
 
   return (
     <div className="space-y-5">
